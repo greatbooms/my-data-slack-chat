@@ -5,7 +5,6 @@ import com.mydata.common.json.JsonMaps;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -44,10 +43,10 @@ public class ExternalDocumentEntity extends BaseEntity {
     @Column(name = "metadata_json", nullable = false, columnDefinition = "jsonb")
     private String metadataJson = JsonMaps.EMPTY_OBJECT;
 
-    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentAclEntryEntity> aclEntries = new ArrayList<>();
 
-    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentChunkEntity> chunks = new ArrayList<>();
 
     public static ExternalDocumentEntity create(
@@ -75,5 +74,15 @@ public class ExternalDocumentEntity extends BaseEntity {
 
     public void addChunk(DocumentChunkEntity chunk) {
         chunks.add(chunk);
+    }
+
+    public void replaceAclEntries(List<DocumentAclEntryEntity> replacement) {
+        aclEntries.clear();
+        aclEntries.addAll(replacement);
+    }
+
+    public void replaceChunks(List<DocumentChunkEntity> replacement) {
+        chunks.clear();
+        chunks.addAll(replacement);
     }
 }

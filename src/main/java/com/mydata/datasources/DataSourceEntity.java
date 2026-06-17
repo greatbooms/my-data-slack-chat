@@ -11,7 +11,11 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnTransformer;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Getter
@@ -19,6 +23,10 @@ import java.util.UUID;
 @Table(name = "data_sources")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DataSourceEntity extends BaseEntity {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> CONFIG_MAP_TYPE = new TypeReference<>() {
+    };
+
     @Column(name = "workspace_id", nullable = false)
     private UUID workspaceId;
 
@@ -61,5 +69,32 @@ public class DataSourceEntity extends BaseEntity {
         dataSource.syncCursorJson = JsonMaps.EMPTY_OBJECT;
         dataSource.configJson = JsonMaps.EMPTY_OBJECT;
         return dataSource;
+    }
+
+    public void putConfig(String key, String value) {
+        try {
+            Map<String, Object> config = readConfig();
+            config.put(key, value);
+            configJson = OBJECT_MAPPER.writeValueAsString(config);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to update data source config", exception);
+        }
+    }
+
+    public String configValue(String key) {
+        try {
+            Object value = readConfig().get(key);
+            return value instanceof String stringValue ? stringValue : null;
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to read data source config", exception);
+        }
+    }
+
+    private Map<String, Object> readConfig() throws java.io.IOException {
+        if (configJson == null || configJson.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+
+        return OBJECT_MAPPER.readValue(configJson, CONFIG_MAP_TYPE);
     }
 }
