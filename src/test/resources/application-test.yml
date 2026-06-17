@@ -1,0 +1,14 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  jpa:
+    hibernate:
+      ddl-auto: validate
+my-data:
+  admin-token: test-admin-token
+  slack:
+    signing-secret: test-signing-secret
+  embedding:
+    model: deterministic-1536
+    dimensions: 1536

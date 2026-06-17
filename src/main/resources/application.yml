@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: my-data
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/my_data}
+    username: ${DATABASE_USERNAME:my_data}
+    password: ${DATABASE_PASSWORD:my_data}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+my-data:
+  admin-token: ${ADMIN_API_TOKEN:local-admin-token}
+  slack:
+    signing-secret: ${SLACK_SIGNING_SECRET:local-signing-secret}
+  embedding:
+    model: ${EMBEDDING_MODEL:deterministic-1536}
+    dimensions: 1536
