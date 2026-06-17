@@ -22,6 +22,8 @@ dependencies {
     implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
     compileOnly platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
     annotationProcessor platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
+    testImplementation platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
+    testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
     testCompileOnly platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
     testAnnotationProcessor platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
 
@@ -29,6 +31,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-flyway'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
 
@@ -40,8 +43,8 @@ dependencies {
     testAnnotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.testcontainers:junit-jupiter'
-    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
 }
 
 tasks.named('test') {
