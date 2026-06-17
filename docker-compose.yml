@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: my-data-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: my_data
+      POSTGRES_USER: my_data
+      POSTGRES_PASSWORD: my_data
+    volumes:
+      - my_data_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U my_data -d my_data"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  my_data_postgres:

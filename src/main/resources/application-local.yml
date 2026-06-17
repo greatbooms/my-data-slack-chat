@@ -2,6 +2,10 @@ spring:
   config:
     activate:
       on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5432/my_data
+    username: my_data
+    password: my_data
 logging:
   level:
     com.mydata: DEBUG
