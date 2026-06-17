@@ -1,54 +1,55 @@
-# My Data RAG Chatbot Design
+# My Data RAG 챗봇 설계
 
-## Summary
+## 요약
 
-Build a Spring Boot application that collects personal and work data from external sources, stores searchable document chunks in PostgreSQL with pgvector, and answers Slack questions using only documents the requester is allowed to read.
+Spring Boot 기반 애플리케이션을 만든다. 이 애플리케이션은 Notion, Slack, Google Drive, OneDrive에서 문서와 메시지 데이터를 수집하고, PostgreSQL과 pgvector에 검색 가능한 청크와 임베딩을 저장한다. 사용자는 Slack에서 질문하고, 시스템은 질문자의 권한으로 접근 가능한 데이터만 검색해 LLM 답변을 생성한다.
 
-The first version is for a single owner, but the domain and database model must support later multi-user use. Authorization is part of the ingestion and retrieval path from the start.
+첫 버전은 1인 개인용으로 시작한다. 다만 최종 목표는 여러 사용자가 각자 권한 범위 안에서 질문하는 시스템이므로, 도메인과 DB 구조는 처음부터 멀티유저 확장이 가능해야 한다. 권한 처리는 나중에 붙이는 부가기능이 아니라, 수집과 검색의 기본 경로에 포함한다.
 
-## Goals
+## 목표
 
-- Use Slack as the initial chat interface.
-- Collect data from Google Drive, Notion, Slack, and OneDrive.
-- Exclude Teams for now.
-- Support manual ingestion and scheduled ingestion.
-- Store source metadata, document chunks, embeddings, and access rules.
-- Filter retrieval by requester permissions before sending context to an LLM.
-- Keep the first implementation as a modular monolith that can later split ingestion workers or connectors into separate services.
+- Slack을 초기 질문/답변 인터페이스로 사용한다.
+- Google Drive, Notion, Slack, OneDrive 데이터를 수집한다.
+- Teams는 초기 범위에서 제외한다.
+- 수동 수집과 주기 수집을 모두 지원한다.
+- 외부 출처 메타데이터, 문서 청크, 임베딩, 접근 권한을 저장한다.
+- 질문 시 질문자의 권한으로 볼 수 있는 문서만 검색한다.
+- 권한 필터를 통과한 청크만 LLM 컨텍스트로 전달한다.
+- 첫 구현은 Spring Boot 모듈러 모놀리스로 시작하고, 이후 필요하면 수집 워커나 커넥터를 별도 서비스로 분리할 수 있게 경계를 잡는다.
 
-## Non-Goals
+## 제외 범위
 
-- Build a public SaaS product in the first version.
-- Build a full web management UI in the first version.
-- Index Microsoft Teams messages in the first version.
-- Support every provider permission edge case in the first version.
-- Store OAuth credentials directly in plaintext database columns.
+- 첫 버전에서 공개 SaaS 형태로 만들지 않는다.
+- 첫 버전에서 완전한 웹 관리 UI를 만들지 않는다.
+- 첫 버전에서 Microsoft Teams 메시지를 색인하지 않는다.
+- 모든 외부 서비스의 세부 권한 예외 케이스를 첫 버전에서 완벽히 처리하지 않는다.
+- OAuth 토큰이나 API 키를 DB 평문 컬럼에 직접 저장하지 않는다.
 
-## Recommended Approach
+## 추천 접근 방식
 
-Use a modular monolith:
+추천 구조는 모듈러 모놀리스다.
 
-- One Spring Boot application.
-- One PostgreSQL database with pgvector.
-- Clear internal modules for data sources, connectors, ingestion, documents, embeddings, retrieval, chat, Slack bot, and admin APIs.
-- Spring Scheduler for initial scheduled ingestion.
-- Database-backed job state for observability and retry.
-- Native SQL repositories for pgvector operations.
-- JPA for regular domain entities and metadata.
+- Spring Boot 애플리케이션 1개
+- PostgreSQL + pgvector DB 1개
+- 내부 모듈은 `datasources`, `connectors`, `ingestion`, `documents`, `embeddings`, `retrieval`, `chat`, `slackbot`, `admin`으로 분리
+- 초기 주기 수집은 Spring Scheduler 사용
+- 수집 작업 상태는 DB에 저장
+- 일반 도메인/메타데이터는 JPA 사용
+- pgvector 검색과 임베딩 bulk 저장은 native SQL repository로 분리
 
-This keeps the MVP operationally simple while preserving boundaries for future extraction of ingestion workers or connector services.
+이 방식은 개인용 MVP를 빠르게 만들 수 있고, 데이터량이 늘어난 뒤에도 수집 워커나 커넥터를 별도 서비스로 빼기 쉽다.
 
-## High-Level Architecture
+## 전체 아키텍처
 
 ```mermaid
 flowchart TD
-    SlackChat["Slack Bot<br/>questions and answers"] --> Chat["Chat Module"]
+    SlackChat["Slack Bot<br/>질문/답변"] --> Chat["Chat Module"]
     Chat --> Retrieval["Retrieval Module"]
     Retrieval --> VectorSearch["pgvector Search"]
     Retrieval --> LLM["LLM Provider"]
 
-    Admin["Admin API<br/>manual ingestion"] --> IngestionJob["Ingestion Job"]
-    Scheduler["Spring Scheduler<br/>scheduled ingestion"] --> IngestionJob
+    Admin["Admin API<br/>수동 수집"] --> IngestionJob["Ingestion Job"]
+    Scheduler["Spring Scheduler<br/>주기 수집"] --> IngestionJob
 
     IngestionJob --> Connectors["Connector Module"]
     Connectors --> Notion["Notion"]
@@ -63,109 +64,109 @@ flowchart TD
     Embedding --> Postgres["PostgreSQL<br/>metadata + pgvector"]
 ```
 
-## Core Modules
+## 핵심 모듈
 
 ### `datasources`
 
-Owns configured external data sources.
+외부 데이터소스 설정을 관리한다.
 
-Responsibilities:
+책임:
 
-- Register and update data sources.
-- Store source type, name, status, sync mode, cron expression, sync cursor, and provider-specific config.
-- Store default data source access policies.
+- 데이터소스 등록, 수정, 상태 관리
+- 데이터소스 타입, 이름, 상태, 동기화 방식, cron 표현식, sync cursor, provider별 설정 저장
+- 데이터소스 기본 접근 정책 저장
 
 ### `connectors`
 
-Owns provider-specific API calls.
+외부 서비스 API 연동을 담당한다.
 
-Responsibilities:
+책임:
 
-- Implement connector adapters for Google Drive, Notion, Slack, and OneDrive.
-- Fetch changed or deleted external documents.
-- Return normalized raw documents and raw ACL entries.
-- Avoid direct persistence of documents, chunks, or embeddings.
+- Google Drive, Notion, Slack, OneDrive 커넥터 구현
+- 변경 또는 삭제된 외부 문서 조회
+- 표준화된 raw document와 raw ACL entry 반환
+- 문서, 청크, 임베딩을 직접 저장하지 않음
 
 ### `ingestion`
 
-Owns ingestion jobs and orchestration.
+수집 작업과 수집 파이프라인 실행을 담당한다.
 
-Responsibilities:
+책임:
 
-- Create manual and scheduled ingestion jobs.
-- Prevent duplicate runs for the same data source.
-- Track job status and per-document processing status.
-- Run the common ingestion pipeline.
-- Mark jobs as succeeded, failed, or partially failed.
+- 수동/주기 수집 job 생성
+- 같은 데이터소스의 중복 실행 방지
+- job 상태와 문서별 처리 상태 기록
+- 공통 수집 파이프라인 실행
+- 성공, 실패, 부분 실패 상태 반영
 
 ### `documents`
 
-Owns normalized documents and document permissions.
+정규화된 문서와 문서 권한을 관리한다.
 
-Responsibilities:
+책임:
 
-- Persist external document metadata.
-- Detect creates, updates, skips, and deletes.
-- Store document-level ACL entries.
-- Store chunks and chunk metadata.
+- 외부 문서 메타데이터 저장
+- 생성, 수정, 스킵, 삭제 감지
+- 문서별 ACL 저장
+- 청크와 청크 메타데이터 저장
 
 ### `embeddings`
 
-Owns embedding generation.
+임베딩 생성을 담당한다.
 
-Responsibilities:
+책임:
 
-- Abstract the embedding provider.
-- Store model name and vector dimension assumptions.
-- Support batch embedding later.
+- 임베딩 provider 추상화
+- 임베딩 모델명과 벡터 차원 관리
+- 이후 batch embedding 확장 가능하게 설계
 
 ### `retrieval`
 
-Owns search.
+검색을 담당한다.
 
-Responsibilities:
+책임:
 
-- Create query embeddings.
-- Run ACL-filtered vector search.
-- Build retrieval candidates and citations.
-- Keep pgvector native SQL isolated from normal JPA repositories.
+- 질문 임베딩 생성
+- ACL 필터가 포함된 vector search 수행
+- 검색 후보와 citation 구성
+- pgvector native SQL을 일반 JPA repository와 분리
 
 ### `chat`
 
-Owns answer generation.
+질문 처리와 답변 생성을 담당한다.
 
-Responsibilities:
+책임:
 
-- Resolve chat sessions.
-- Normalize user questions.
-- Build context packs from authorized chunks.
-- Call the LLM.
-- Save messages and citations.
+- chat session 조회 또는 생성
+- 사용자 질문 정규화
+- 권한 통과 청크로 context pack 생성
+- LLM 호출
+- 대화 메시지와 citation 저장
 
 ### `slackbot`
 
-Owns Slack integration.
+Slack 연동을 담당한다.
 
-Responsibilities:
+책임:
 
-- Receive Slack events.
-- Verify Slack signatures.
-- Resolve Slack user identity.
-- Acknowledge quickly and process longer answers asynchronously.
-- Reply in Slack threads.
+- Slack event 수신
+- Slack signature 검증
+- Slack user identity 해석
+- 빠른 ack 반환 후 긴 답변 처리는 비동기로 수행
+- Slack thread에 답변 전송
 
 ### `admin`
 
-Owns personal management APIs.
+개인용 관리 API를 담당한다.
 
-Responsibilities:
+책임:
 
-- Create and list data sources.
-- Trigger manual sync.
-- Inspect ingestion jobs.
-- Inspect documents and chunks for debugging.
+- 데이터소스 생성/조회
+- 수동 sync 실행
+- 수집 job 조회
+- 문서와 청크 디버깅 조회
 
-## Package Structure
+## 패키지 구조
 
 ```text
 com.mydata
@@ -194,7 +195,7 @@ com.mydata
 └── admin
 ```
 
-## Domain Model
+## 도메인 모델
 
 ```mermaid
 erDiagram
@@ -214,13 +215,13 @@ erDiagram
     chat_messages ||--o{ chat_retrieval_citations : cites
 ```
 
-## Authorization Model
+## 권한 모델
 
-The system must distinguish between data collection and answer authorization.
+이 시스템은 "수집 가능한 데이터"와 "답변에 사용할 수 있는 데이터"를 구분해야 한다.
 
-Collection means the application has provider credentials that allow it to fetch a document. Answer authorization means a specific Slack requester is allowed to use that document as answer context.
+수집 가능하다는 것은 애플리케이션이 provider credential을 통해 외부 문서를 가져올 수 있다는 뜻이다. 답변에 사용할 수 있다는 것은 특정 질문자가 그 문서를 읽을 권한이 있다는 뜻이다.
 
-Authorization is represented with principal keys:
+권한은 principal key로 표현한다.
 
 ```text
 USER:{userUuid}
@@ -233,34 +234,38 @@ MS_GROUP:{groupId}
 WORKSPACE:{workspaceUuid}
 ```
 
-### Data Source Policies
+### 데이터소스 기본 정책
 
-`data_source_access_policies` stores default read access for a source. Examples:
+`data_source_access_policies`는 데이터소스의 기본 읽기 권한을 저장한다.
 
-- A personal Google Drive source defaults to `USER:{ownerId}`.
-- A Slack public channel source can default to a workspace or channel principal.
-- A manually restricted Notion source can default to a specific user or group principal.
+예:
 
-### Document ACL Entries
+- 개인 Google Drive 데이터소스는 `USER:{ownerId}`에 기본 READ 권한을 부여한다.
+- Slack public channel 데이터소스는 workspace 또는 channel principal에 READ 권한을 부여할 수 있다.
+- 제한된 Notion 데이터소스는 특정 사용자 또는 그룹 principal에 READ 권한을 부여할 수 있다.
 
-`document_acl_entries` stores final document-level read access. Entries can come from:
+### 문서별 ACL
+
+`document_acl_entries`는 최종 문서 단위 읽기 권한을 저장한다.
+
+ACL entry의 출처:
 
 - `INHERITED_FROM_DATA_SOURCE`
 - `IMPORTED_FROM_PROVIDER`
 - `MANUAL`
 
-Every retrieval query must filter by these document ACL entries. If a document has no matching ACL for the requester, it must not be used as LLM context.
+모든 retrieval query는 반드시 `document_acl_entries`를 기준으로 필터링해야 한다. 질문자의 principal과 매칭되는 ACL이 없는 문서는 LLM context로 전달하면 안 된다.
 
-For the first one-person version:
+첫 1인 버전에서는 다음처럼 단순화한다.
 
-- Create one internal user and one workspace.
-- Map the owner's Slack user id to the internal user.
-- Grant all imported documents `READ` for `USER:{ownerId}`.
-- Still execute retrieval through the ACL-filtered path.
+- 내부 사용자 1명과 workspace 1개 생성
+- owner의 Slack user id를 내부 사용자와 매핑
+- 수집된 모든 문서에 `USER:{ownerId}` READ 권한 부여
+- 그래도 검색 경로는 처음부터 ACL 필터를 통과하게 구현
 
-## Ingestion Flow
+## 수집 흐름
 
-Manual ingestion and scheduled ingestion both create an `IngestionJob` and use the same pipeline.
+수동 수집과 주기 수집은 모두 `IngestionJob`을 만들고 같은 파이프라인을 탄다.
 
 ```mermaid
 flowchart TD
@@ -277,7 +282,7 @@ flowchart TD
     Save --> Complete["Update Job Status"]
 ```
 
-### Connector Contract
+### 커넥터 계약
 
 ```java
 public interface DataSourceConnector {
@@ -291,7 +296,7 @@ public interface DataSourceConnector {
 }
 ```
 
-Connectors emit normalized raw documents:
+커넥터는 표준화된 raw document를 반환한다.
 
 ```java
 public record RawExternalDocument(
@@ -309,7 +314,7 @@ public record RawExternalDocument(
 ) {}
 ```
 
-ACL hints are passed with the document:
+권한 힌트도 문서와 함께 넘긴다.
 
 ```java
 public record RawAclEntry(
@@ -321,71 +326,71 @@ public record RawAclEntry(
 ) {}
 ```
 
-### Change Detection
+### 변경 감지
 
-Use these signals:
+다음 신호를 사용한다.
 
-- `data_source_id + external_id` identifies the same external document.
-- `external_updated_at` detects likely changes.
-- `content_hash` detects actual content changes.
+- `data_source_id + external_id`: 같은 외부 문서인지 식별
+- `external_updated_at`: 외부 수정 시각 비교
+- `content_hash`: 실제 내용 변경 여부 확인
 
-If nothing changed, record the job item as `SKIPPED`.
+변경이 없으면 `ingestion_job_items.status = SKIPPED`로 기록한다.
 
-### Delete Handling
+### 삭제 처리
 
-Deleted external documents should set `external_documents.deleted_at`. Chunks and embeddings can remain for audit/debug, but retrieval must exclude deleted documents.
+외부에서 삭제된 문서는 `external_documents.deleted_at`을 설정한다. 청크와 임베딩은 audit/debug를 위해 남겨둘 수 있지만, retrieval에서는 반드시 삭제 문서를 제외한다.
 
-### Concurrency
+### 동시 실행 제어
 
-Only one ingestion job should run for a given `data_source_id` at a time. The first implementation can use a database row lock or PostgreSQL advisory lock. Later versions can use Redis, Kafka, or a separate worker service.
+같은 `data_source_id`에 대해서는 한 번에 하나의 수집 job만 실행한다. 첫 구현은 DB row lock 또는 PostgreSQL advisory lock을 사용한다. 이후 데이터량이 커지면 Redis, Kafka, 별도 worker service로 확장할 수 있다.
 
-## Provider Notes
+## Provider별 설계 메모
 
 ### Google Drive
 
-Recommended first connector.
+첫 커넥터로 추천한다.
 
-Reasons:
+이유:
 
-- File and folder concepts are clear.
-- Permissions are explicit.
-- OneDrive later has a similar document/permission shape.
+- 파일과 폴더 개념이 명확하다.
+- 권한 모델이 비교적 명시적이다.
+- 이후 OneDrive가 유사한 문서/권한 구조를 가진다.
 
-Behavior:
+동작:
 
-- Import selected folders or files.
-- Read file metadata, permissions, and modified time.
-- Extract text from supported file types.
-- Convert folder/file permissions into document ACL entries.
+- 선택된 폴더 또는 파일을 import한다.
+- 파일 메타데이터, permission, modified time을 읽는다.
+- 지원 파일 타입에서 텍스트를 추출한다.
+- 폴더/파일 permission을 document ACL entry로 변환한다.
 
 ### Notion
 
-Behavior:
+동작:
 
-- Import selected pages or databases.
-- Flatten Notion block content into text.
-- Use provider ACL where available.
-- Fall back to data source policy when provider ACL details are insufficient.
+- 선택된 page 또는 database를 import한다.
+- Notion block content를 텍스트로 평탄화한다.
+- 가능한 범위에서 provider ACL을 사용한다.
+- provider ACL이 충분하지 않으면 data source policy를 적용한다.
 
-### Slack Data Source
+### Slack 데이터소스
 
-Behavior:
+동작:
 
-- Import selected channels.
-- Represent messages, threads, and optionally attached files as external documents.
-- Public channel content can map to workspace or channel principals.
-- Private channel content maps to channel member principals.
-- DM and multi-person DM ingestion are out of MVP scope unless explicitly enabled for the owner.
+- 선택된 channel을 import한다.
+- message, thread, 필요 시 첨부파일을 external document로 표현한다.
+- public channel content는 workspace 또는 channel principal로 매핑할 수 있다.
+- private channel content는 channel member principal로 매핑한다.
+- DM과 multi-person DM 수집은 owner가 명시적으로 켜기 전까지 MVP 범위에서 제외한다.
 
 ### OneDrive
 
-Behavior:
+동작:
 
-- Use Microsoft Graph to import selected folders or files.
-- Store Microsoft user/group principals.
-- Teams messages remain out of scope, but OneDrive file permissions should be compatible with future Microsoft group expansion.
+- Microsoft Graph를 사용해 선택된 폴더 또는 파일을 import한다.
+- Microsoft user/group principal을 저장한다.
+- Teams 메시지는 제외하지만, OneDrive 파일 권한 모델은 이후 Microsoft group 확장과 호환되게 설계한다.
 
-## Retrieval And Slack Answer Flow
+## Retrieval과 Slack 답변 흐름
 
 ```mermaid
 flowchart TD
@@ -403,9 +408,9 @@ flowchart TD
     Save --> SlackReply["Reply to Slack Thread"]
 ```
 
-### Requester Principals
+### 질문자 principal
 
-When a Slack user asks a question, build a principal set for that requester:
+Slack 사용자가 질문하면 다음 principal set을 만든다.
 
 ```text
 USER:{internalUserId}
@@ -415,9 +420,9 @@ SLACK_CHANNEL:{channelId}
 GROUP:{groupId}
 ```
 
-The first version mostly relies on `USER:{ownerId}`, but the retrieval API should accept a list of principal keys from the beginning.
+첫 버전에서는 대부분 `USER:{ownerId}`만 사용한다. 그래도 retrieval API는 처음부터 principal key 목록을 받게 만든다.
 
-### ACL-Filtered Vector Search
+### ACL 필터 포함 vector search
 
 ```sql
 SELECT
@@ -443,17 +448,17 @@ ORDER BY e.embedding <=> CAST(:queryEmbedding AS vector)
 LIMIT :limit;
 ```
 
-### Answer Rules
+### 답변 원칙
 
-- Use only ACL-approved chunks as LLM context.
-- If no useful context is found, say that the answer cannot be found in indexed data.
-- Include citations with source title and URL when available.
-- Do not reveal that inaccessible documents exist.
-- Do not include raw credentials or sensitive operational data in prompts or logs.
+- ACL을 통과한 청크만 LLM context로 사용한다.
+- 충분한 근거가 없으면 색인된 데이터에서 답을 찾지 못했다고 답한다.
+- 가능한 경우 출처 제목과 URL을 citation으로 포함한다.
+- 접근 권한이 없는 문서의 존재를 암시하지 않는다.
+- prompt와 log에 raw credential이나 민감한 운영 정보를 포함하지 않는다.
 
 ## Admin API
 
-Initial management endpoints:
+초기 관리 endpoint:
 
 ```text
 POST /admin/data-sources
@@ -470,25 +475,25 @@ GET  /admin/documents/{id}
 GET  /admin/documents/{id}/chunks
 ```
 
-Initial Slack endpoints:
+초기 Slack endpoint:
 
 ```text
 POST /slack/events
 POST /slack/commands/search
 ```
 
-The slash command endpoint is optional for MVP. Slack Events API is enough to support mentions and DMs.
+Slash command는 MVP에서 선택 사항이다. Slack Events API만으로 app mention과 DM 질문을 처리할 수 있다.
 
-## Database Schema Draft
+## DB 스키마 초안
 
-Enable extensions:
+확장 활성화:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 ```
 
-### Users And Workspaces
+### 사용자와 workspace
 
 ```sql
 CREATE TABLE users (
@@ -515,7 +520,7 @@ CREATE TABLE workspace_members (
 );
 ```
 
-### External Identities
+### 외부 identity
 
 ```sql
 CREATE TABLE external_identities (
@@ -533,9 +538,9 @@ CREATE TABLE external_identities (
 );
 ```
 
-Because PostgreSQL treats `NULL` values as distinct in unique constraints, connectors that do not have an external workspace id should store a stable sentinel value such as `global` instead of `NULL`.
+PostgreSQL의 unique constraint는 `NULL`을 서로 다른 값으로 취급한다. 따라서 외부 workspace id가 없는 provider는 `external_workspace_id`에 `NULL` 대신 `global` 같은 안정적인 sentinel 값을 저장한다.
 
-### Data Sources
+### 데이터소스
 
 ```sql
 CREATE TABLE data_sources (
@@ -564,7 +569,7 @@ CREATE TABLE data_source_access_policies (
 );
 ```
 
-### Documents, ACL, Chunks, Embeddings
+### 문서, ACL, 청크, 임베딩
 
 ```sql
 CREATE TABLE external_documents (
@@ -619,9 +624,9 @@ CREATE TABLE document_embeddings (
 );
 ```
 
-`vector(1536)` is the MVP default. The first implementation must use an embedding model with this dimension or adjust the first migration before any data is stored. After production data exists, changing embedding dimensions should be handled as a new embedding model version and backfill, not by mutating the existing column in place.
+`vector(1536)`은 MVP 기본값이다. 첫 구현은 1536차원 임베딩 모델을 사용하거나, 데이터 저장 전에 첫 migration의 차원을 조정해야 한다. 운영 데이터가 생긴 뒤 임베딩 차원을 바꿔야 한다면 기존 컬럼을 직접 변경하지 말고 새 embedding model version과 backfill로 처리한다.
 
-### Ingestion Jobs
+### 수집 job
 
 ```sql
 CREATE TABLE ingestion_jobs (
@@ -648,7 +653,7 @@ CREATE TABLE ingestion_job_items (
 );
 ```
 
-### Chat
+### 채팅
 
 ```sql
 CREATE TABLE chat_sessions (
@@ -680,7 +685,7 @@ CREATE TABLE chat_retrieval_citations (
 );
 ```
 
-### Indexes
+### 인덱스
 
 ```sql
 CREATE INDEX idx_data_sources_workspace ON data_sources(workspace_id);
@@ -696,9 +701,9 @@ USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 ```
 
-## Repository Strategy
+## Repository 전략
 
-Use JPA for:
+JPA 사용 대상:
 
 - users
 - workspaces
@@ -710,13 +715,13 @@ Use JPA for:
 - chat sessions
 - chat messages
 
-Use native SQL for:
+Native SQL 사용 대상:
 
 - pgvector similarity search
-- bulk upsert of embeddings
-- heavy debug search queries
+- embedding bulk upsert
+- 무거운 검색/debug query
 
-The initial retrieval repository should expose a method similar to:
+초기 retrieval repository는 다음 형태의 메서드를 제공한다.
 
 ```java
 List<RetrievedChunk> searchAuthorizedChunks(
@@ -727,24 +732,24 @@ List<RetrievedChunk> searchAuthorizedChunks(
 );
 ```
 
-## Transaction Boundaries
+## 트랜잭션 경계
 
-Ingestion should use document-level transactions:
+수집은 문서 단위 트랜잭션으로 처리한다.
 
-- A whole ingestion job is not one transaction.
-- One failed document should not fail the whole job.
-- Each document update includes document metadata, ACL entries, chunks, and embeddings.
-- The job state is updated after item processing.
+- job 전체를 하나의 트랜잭션으로 묶지 않는다.
+- 문서 하나가 실패해도 job 전체가 실패하지 않게 한다.
+- 문서 하나의 업데이트에는 문서 메타데이터, ACL, 청크, 임베딩 저장이 포함된다.
+- item 처리 후 job 상태를 갱신한다.
 
-Question answering is read-heavy:
+질문 처리는 읽기 중심이다.
 
-- Slack event endpoint acknowledges quickly.
-- Longer processing can run asynchronously.
-- Chat messages and citations are saved after answer generation.
+- Slack event endpoint는 빠르게 ack를 반환한다.
+- 오래 걸리는 답변 처리는 비동기로 수행할 수 있다.
+- 답변 생성 후 chat message와 citation을 저장한다.
 
-## Error Handling
+## 오류 처리
 
-Job status values:
+Job status:
 
 - `PENDING`
 - `RUNNING`
@@ -753,7 +758,7 @@ Job status values:
 - `FAILED`
 - `CANCELLED`
 
-Item status values:
+Item status:
 
 - `CREATED`
 - `UPDATED`
@@ -761,29 +766,29 @@ Item status values:
 - `DELETED`
 - `FAILED`
 
-Provider rate limits should use:
+Provider rate limit 처리:
 
-- Exponential backoff.
-- Provider `Retry-After` support.
-- Bounded retries.
-- Re-runnable failed jobs.
+- exponential backoff
+- provider `Retry-After` 지원
+- 제한된 횟수의 retry
+- 실패 job 재실행 가능
 
-## Security
+## 보안
 
-Required controls:
+필수 제어:
 
-- Verify Slack request signatures.
-- Reject Slack questions when identity mapping fails.
-- Never send unauthorized chunks to the LLM.
-- Store only `credentials_ref` in database rows.
-- Keep actual OAuth tokens and API keys in environment variables, local secret files, Vault, AWS Secrets Manager, or another secret backend.
-- Do not log provider access tokens, refresh tokens, or full document content.
-- Protect admin APIs with an admin token in MVP.
-- Add workspace membership checks before multi-user rollout.
+- Slack request signature 검증
+- Slack 질문자의 identity mapping 실패 시 답변 거부
+- 권한 없는 청크를 LLM에 절대 전달하지 않음
+- DB row에는 `credentials_ref`만 저장
+- 실제 OAuth token과 API key는 환경변수, local secret file, Vault, AWS Secrets Manager 등 secret backend에 저장
+- provider access token, refresh token, 문서 원문 전체를 log에 남기지 않음
+- MVP의 admin API는 admin token으로 보호
+- 멀티유저 전환 전 workspace membership 검사 추가
 
-## Configuration
+## 설정
 
-Initial environment variables:
+초기 환경변수:
 
 ```text
 DATABASE_URL
@@ -794,76 +799,76 @@ EMBEDDING_MODEL
 ADMIN_API_TOKEN
 ```
 
-Provider-specific credentials can be added behind `credentials_ref` as each connector is implemented.
+Provider별 credential은 각 connector 구현 시 `credentials_ref` 뒤에 붙인다.
 
-## Testing Strategy
+## 테스트 전략
 
-Unit tests:
+단위 테스트:
 
-- Chunking behavior.
-- Content hash comparison.
-- Permission resolver behavior.
-- Principal key creation.
-- Connector normalization.
-- Retrieval context pack creation.
+- chunking 동작
+- content hash 비교
+- permission resolver 동작
+- principal key 생성
+- connector normalization
+- retrieval context pack 생성
 
-Integration tests:
+통합 테스트:
 
-- Flyway migrations against PostgreSQL with pgvector.
-- ACL-filtered vector search.
-- Ingestion job state transitions.
-- Document create, update, skip, delete behavior.
-- Native SQL repository behavior.
+- PostgreSQL + pgvector 기반 Flyway migration 검증
+- ACL 필터 포함 vector search
+- ingestion job 상태 전이
+- 문서 생성, 수정, 스킵, 삭제 처리
+- native SQL repository 동작
 
-Security regression tests:
+보안 회귀 테스트:
 
-- Unauthorized principals receive no search results.
-- Documents without ACL entries are not searchable.
-- Deleted documents are not searchable.
-- Slack identity mapping failure blocks answer generation.
-- LLM context contains only authorized chunks.
+- 권한 없는 principal은 검색 결과를 받지 못함
+- ACL entry가 없는 문서는 검색되지 않음
+- 삭제된 문서는 검색되지 않음
+- Slack identity mapping 실패 시 답변 생성 차단
+- LLM context에는 권한 통과 청크만 포함
 
-Slack tests:
+Slack 테스트:
 
-- Signature verification.
-- App mention handling.
-- DM handling.
-- Thread reply handling.
-- Fast acknowledgement before long processing.
+- signature 검증
+- app mention 처리
+- DM 처리
+- thread reply 처리
+- 긴 처리 전 빠른 ack 반환
 
-## MVP Slice
+## MVP 구현 순서
 
-Recommended first implementation slice:
+추천 첫 구현 slice:
 
-1. Create Spring Boot project.
-2. Add PostgreSQL, pgvector, Flyway, JPA, validation, scheduling, Slack SDK, and test dependencies.
-3. Add migrations for users, workspaces, data sources, documents, ACL, chunks, embeddings, ingestion jobs, and chat.
-4. Seed one owner user and one workspace for local development.
-5. Implement admin API for data source creation and manual sync job creation.
-6. Implement Google Drive as the first connector.
-7. Implement text extraction for a narrow set of file types first.
-8. Implement chunking and embedding storage.
-9. Implement ACL-filtered vector search.
-10. Implement Slack question handling and answer generation.
-11. Add Notion, Slack source ingestion, and OneDrive after the first end-to-end path works.
+1. Spring Boot 프로젝트 생성
+2. PostgreSQL, pgvector, Flyway, JPA, validation, scheduling, Slack SDK, test dependency 추가
+3. users, workspaces, data sources, documents, ACL, chunks, embeddings, ingestion jobs, chat migration 추가
+4. local 개발용 owner user와 workspace seed
+5. data source 생성과 manual sync job 생성을 위한 admin API 구현
+6. Google Drive 첫 connector 구현
+7. 제한된 파일 타입에 대한 텍스트 추출 구현
+8. chunking과 embedding 저장 구현
+9. ACL 필터 포함 vector search 구현
+10. Slack 질문 처리와 답변 생성 구현
+11. 첫 end-to-end Slack 답변 흐름이 동작한 뒤 Notion, Slack source ingestion, OneDrive 추가
 
-## Initial Implementation Defaults
+## 초기 구현 기본값
 
-- Use a provider adapter for LLM and embedding calls so the application code is not coupled to one vendor.
-- Use a 1536-dimensional embedding model for the first migration.
-- Use environment variables for local development secrets in the MVP.
-- Use Spring `@Scheduled` polling for scheduled ingestion in the MVP.
-- Support plain text, Markdown, Google Docs exported as text, and PDF text extraction in the first Google Drive connector slice.
-- Defer Quartz, queue systems, image OCR, spreadsheet extraction, and presentation extraction until after the first end-to-end Slack answer flow works.
+- LLM과 embedding 호출은 provider adapter로 감싸서 특정 vendor에 애플리케이션 코드가 직접 묶이지 않게 한다.
+- 첫 migration은 1536차원 임베딩 모델을 기준으로 한다.
+- MVP의 local 개발 secret은 환경변수로 관리한다.
+- MVP의 scheduled ingestion은 Spring `@Scheduled` polling으로 시작한다.
+- 첫 Google Drive connector slice는 plain text, Markdown, Google Docs text export, PDF text extraction을 지원한다.
+- Quartz, queue system, image OCR, spreadsheet extraction, presentation extraction은 첫 end-to-end Slack 답변 흐름 이후로 미룬다.
 
-## Acceptance Criteria
+## 인수 기준
 
-- A document imported from a data source stores source metadata, chunks, embeddings, and ACL entries.
-- Manual sync and scheduled sync use the same ingestion path.
-- Re-importing unchanged documents records `SKIPPED`.
-- Deleted documents are excluded from retrieval.
-- Slack questions resolve a requester identity.
-- Vector retrieval filters by requester principal keys before LLM context creation.
-- A requester without matching ACL entries receives no answer context from restricted documents.
-- Answers include citations when source title or URL is available.
-- Ingestion failures are visible through job and item status.
+- 데이터소스에서 import된 문서는 출처 메타데이터, 청크, 임베딩, ACL entry를 저장한다.
+- 수동 sync와 주기 sync는 같은 ingestion path를 사용한다.
+- 변경 없는 문서를 다시 import하면 `SKIPPED`로 기록한다.
+- 삭제된 문서는 retrieval에서 제외된다.
+- Slack 질문은 질문자 identity를 해석한다.
+- Vector retrieval은 LLM context 생성 전에 질문자 principal key로 필터링한다.
+- ACL이 매칭되지 않는 질문자는 제한 문서의 context를 받을 수 없다.
+- 출처 제목 또는 URL이 있으면 답변에 citation을 포함한다.
+- 수집 실패는 job과 item status로 확인할 수 있다.
