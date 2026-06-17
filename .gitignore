@@ -1,5 +1,7 @@
 .worktrees
 .worktrees/
+.serena/
+bin/
 .gradle/
 build/
 out/
