@@ -75,14 +75,4 @@ public class ExternalDocumentEntity extends BaseEntity {
     public void addChunk(DocumentChunkEntity chunk) {
         chunks.add(chunk);
     }
-
-    public void replaceAclEntries(List<DocumentAclEntryEntity> replacement) {
-        aclEntries.clear();
-        aclEntries.addAll(replacement);
-    }
-
-    public void replaceChunks(List<DocumentChunkEntity> replacement) {
-        chunks.clear();
-        chunks.addAll(replacement);
-    }
 }

@@ -889,6 +889,7 @@ git commit -m "feat: add principal key helpers"
 - Create: `src/main/java/com/mydata/documents/ExternalDocumentEntity.java`
 - Create: `src/main/java/com/mydata/documents/ExternalDocumentRepository.java`
 - Create: `src/main/java/com/mydata/documents/DocumentAclEntryEntity.java`
+- Create: `src/main/java/com/mydata/documents/DocumentAclEntryRepository.java`
 - Create: `src/main/java/com/mydata/documents/DocumentChunkEntity.java`
 - Create: `src/main/java/com/mydata/documents/DocumentChunkRepository.java`
 - Create: `src/test/java/com/mydata/documents/CorePersistenceTest.java`
@@ -1021,7 +1022,9 @@ Create the entities and repositories with these exact rules:
 - JSONB fields are mapped as `String` with `columnDefinition = "jsonb"`.
 - `ExternalDocumentEntity` owns `aclEntries` and `chunks` through `@OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)`.
 - `DocumentAclEntryEntity.read(...)` stores permission as `Permission.READ`.
+- `DocumentAclEntryRepository` exposes `List<DocumentAclEntryEntity> findByDocumentId(UUID documentId)` so services can safely delete existing ACL rows and flush before adding same-key replacements.
 - `DocumentChunkRepository` exposes `List<DocumentChunkEntity> findByDocumentIdOrderByChunkIndex(UUID documentId)`.
+- Same-key child-row replacement must be performed by repository `deleteAll(...)` + `flush()` before adding replacement ACL/chunk rows; do not add entity-level `replace*` collection methods because they can violate child-table unique constraints in one flush.
 
 Required enum contents:
 
@@ -1493,7 +1496,7 @@ public interface DocumentHandler {
 `IngestionPipelineService` behavior:
 
 - Upsert `external_documents` by `data_source_id + external_id`.
-- Replace ACL entries and chunks for changed documents.
+- For changed documents, replace ACL entries and chunks by deleting existing child rows through repositories, flushing, then inserting replacements. This avoids same-key unique constraint violations on `(document_id, principal_key, permission)` and `(document_id, chunk_index)`.
 - Skip unchanged documents when `content_hash` matches.
 - Store `source = 'MANUAL'` for local ACL entries.
 
