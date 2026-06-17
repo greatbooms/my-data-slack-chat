@@ -224,7 +224,7 @@ erDiagram
 USER:{userUuid}
 SLACK_USER:{slackWorkspaceId}:{slackUserId}
 SLACK_WORKSPACE:{slackWorkspaceId}
-SLACK_CHANNEL:{channelId}
+SLACK_CHANNEL:{slackWorkspaceId}:{channelId}
 GOOGLE_USER:{email}
 WORKSPACE:{workspaceUuid}
 ```
@@ -403,7 +403,7 @@ Slack 사용자가 질문하면 다음 principal set을 만든다.
 USER:{internalUserId}
 SLACK_USER:{slackWorkspaceId}:{slackUserId}
 SLACK_WORKSPACE:{slackWorkspaceId}
-SLACK_CHANNEL:{channelId}
+SLACK_CHANNEL:{slackWorkspaceId}:{channelId}
 GROUP:{groupId}
 ```
 

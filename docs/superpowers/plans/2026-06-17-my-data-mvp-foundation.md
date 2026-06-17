@@ -703,9 +703,11 @@ package com.mydata.auth;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Locale;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PrincipalKeysTest {
     @Test
@@ -717,21 +719,63 @@ class PrincipalKeysTest {
     }
 
     @Test
+    void createsWorkspacePrincipal() {
+        UUID workspaceId = UUID.fromString("22222222-2222-2222-2222-222222222222");
+
+        assertThat(PrincipalKeys.workspace(workspaceId))
+            .isEqualTo("WORKSPACE:22222222-2222-2222-2222-222222222222");
+    }
+
+    @Test
     void createsSlackUserPrincipal() {
         assertThat(PrincipalKeys.slackUser("T123", "U456"))
             .isEqualTo("SLACK_USER:T123:U456");
     }
 
     @Test
+    void createsSlackWorkspacePrincipal() {
+        assertThat(PrincipalKeys.slackWorkspace("T123"))
+            .isEqualTo("SLACK_WORKSPACE:T123");
+    }
+
+    @Test
     void createsSlackChannelPrincipal() {
-        assertThat(PrincipalKeys.slackChannel("C789"))
-            .isEqualTo("SLACK_CHANNEL:C789");
+        assertThat(PrincipalKeys.slackChannel("T123", "C789"))
+            .isEqualTo("SLACK_CHANNEL:T123:C789");
     }
 
     @Test
     void createsGoogleUserPrincipal() {
         assertThat(PrincipalKeys.googleUser("Owner@Example.com"))
             .isEqualTo("GOOGLE_USER:owner@example.com");
+    }
+
+    @Test
+    void createsGoogleUserPrincipalWithRootLocale() {
+        Locale originalLocale = Locale.getDefault();
+
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr"));
+
+            assertThat(PrincipalKeys.googleUser("INFO@Example.com"))
+                .isEqualTo("GOOGLE_USER:info@example.com");
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
+    }
+
+    @Test
+    void rejectsNullInputs() {
+        assertThatThrownBy(() -> PrincipalKeys.user(null))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PrincipalKeys.slackUser(null, "U456"))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PrincipalKeys.slackUser("T123", null))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PrincipalKeys.slackChannel("T123", null))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PrincipalKeys.googleUser(null))
+            .isInstanceOf(NullPointerException.class);
     }
 }
 ```
@@ -764,6 +808,7 @@ Create `src/main/java/com/mydata/auth/PrincipalKeys.java`:
 package com.mydata.auth;
 
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
 public final class PrincipalKeys {
@@ -771,26 +816,40 @@ public final class PrincipalKeys {
     }
 
     public static String user(UUID userId) {
+        Objects.requireNonNull(userId, "userId");
+
         return "USER:" + userId;
     }
 
     public static String workspace(UUID workspaceId) {
+        Objects.requireNonNull(workspaceId, "workspaceId");
+
         return "WORKSPACE:" + workspaceId;
     }
 
     public static String slackUser(String slackWorkspaceId, String slackUserId) {
+        Objects.requireNonNull(slackWorkspaceId, "slackWorkspaceId");
+        Objects.requireNonNull(slackUserId, "slackUserId");
+
         return "SLACK_USER:" + slackWorkspaceId + ":" + slackUserId;
     }
 
     public static String slackWorkspace(String slackWorkspaceId) {
+        Objects.requireNonNull(slackWorkspaceId, "slackWorkspaceId");
+
         return "SLACK_WORKSPACE:" + slackWorkspaceId;
     }
 
-    public static String slackChannel(String channelId) {
-        return "SLACK_CHANNEL:" + channelId;
+    public static String slackChannel(String slackWorkspaceId, String channelId) {
+        Objects.requireNonNull(slackWorkspaceId, "slackWorkspaceId");
+        Objects.requireNonNull(channelId, "channelId");
+
+        return "SLACK_CHANNEL:" + slackWorkspaceId + ":" + channelId;
     }
 
     public static String googleUser(String email) {
+        Objects.requireNonNull(email, "email");
+
         return "GOOGLE_USER:" + email.toLowerCase(Locale.ROOT);
     }
 }
