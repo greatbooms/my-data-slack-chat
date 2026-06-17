@@ -2,14 +2,14 @@
 
 ## 요약
 
-Spring Boot 기반 애플리케이션을 만든다. 이 애플리케이션은 Notion, Slack, Google Drive, OneDrive에서 문서와 메시지 데이터를 수집하고, PostgreSQL과 pgvector에 검색 가능한 청크와 임베딩을 저장한다. 사용자는 Slack에서 질문하고, 시스템은 질문자의 권한으로 접근 가능한 데이터만 검색해 LLM 답변을 생성한다.
+Spring Boot 기반 애플리케이션을 만든다. 이 애플리케이션은 Notion, Slack, Google Drive에서 문서와 메시지 데이터를 수집하고, PostgreSQL과 pgvector에 검색 가능한 청크와 임베딩을 저장한다. 사용자는 Slack에서 질문하고, 시스템은 질문자의 권한으로 접근 가능한 데이터만 검색해 LLM 답변을 생성한다.
 
 첫 버전은 1인 개인용으로 시작한다. 다만 최종 목표는 여러 사용자가 각자 권한 범위 안에서 질문하는 시스템이므로, 도메인과 DB 구조는 처음부터 멀티유저 확장이 가능해야 한다. 권한 처리는 나중에 붙이는 부가기능이 아니라, 수집과 검색의 기본 경로에 포함한다.
 
 ## 목표
 
 - Slack을 초기 질문/답변 인터페이스로 사용한다.
-- Google Drive, Notion, Slack, OneDrive 데이터를 수집한다.
+- Google Drive, Notion, Slack 데이터를 수집한다.
 - Teams는 초기 범위에서 제외한다.
 - 수동 수집과 주기 수집을 모두 지원한다.
 - 외부 출처 메타데이터, 문서 청크, 임베딩, 접근 권한을 저장한다.
@@ -55,8 +55,6 @@ flowchart TD
     Connectors --> Notion["Notion"]
     Connectors --> SlackData["Slack Data"]
     Connectors --> GDrive["Google Drive"]
-    Connectors --> OneDrive["OneDrive"]
-
     Connectors --> Pipeline["Ingestion Pipeline"]
     Pipeline --> Parser["Parser"]
     Parser --> Chunker["Chunker"]
@@ -82,7 +80,7 @@ flowchart TD
 
 책임:
 
-- Google Drive, Notion, Slack, OneDrive 커넥터 구현
+- Google Drive, Notion, Slack 커넥터 구현
 - 변경 또는 삭제된 외부 문서 조회
 - 표준화된 raw document와 raw ACL entry 반환
 - 문서, 청크, 임베딩을 직접 저장하지 않음
@@ -184,8 +182,7 @@ com.mydata
 │   ├── core
 │   ├── notion
 │   ├── slack
-│   ├── googledrive
-│   └── onedrive
+│   └── googledrive
 ├── ingestion
 ├── documents
 ├── embeddings
@@ -229,8 +226,6 @@ SLACK_USER:{slackWorkspaceId}:{slackUserId}
 SLACK_WORKSPACE:{slackWorkspaceId}
 SLACK_CHANNEL:{channelId}
 GOOGLE_USER:{email}
-MS_USER:{objectId}
-MS_GROUP:{groupId}
 WORKSPACE:{workspaceUuid}
 ```
 
@@ -354,7 +349,7 @@ public record RawAclEntry(
 
 - 파일과 폴더 개념이 명확하다.
 - 권한 모델이 비교적 명시적이다.
-- 이후 OneDrive가 유사한 문서/권한 구조를 가진다.
+- 파일과 권한을 함께 다루는 첫 end-to-end 수집 경로로 적합하다.
 
 동작:
 
@@ -381,14 +376,6 @@ public record RawAclEntry(
 - public channel content는 workspace 또는 channel principal로 매핑할 수 있다.
 - private channel content는 channel member principal로 매핑한다.
 - DM과 multi-person DM 수집은 owner가 명시적으로 켜기 전까지 MVP 범위에서 제외한다.
-
-### OneDrive
-
-동작:
-
-- Microsoft Graph를 사용해 선택된 폴더 또는 파일을 import한다.
-- Microsoft user/group principal을 저장한다.
-- Teams 메시지는 제외하지만, OneDrive 파일 권한 모델은 이후 Microsoft group 확장과 호환되게 설계한다.
 
 ## Retrieval과 Slack 답변 흐름
 
@@ -850,7 +837,7 @@ Slack 테스트:
 8. chunking과 embedding 저장 구현
 9. ACL 필터 포함 vector search 구현
 10. Slack 질문 처리와 답변 생성 구현
-11. 첫 end-to-end Slack 답변 흐름이 동작한 뒤 Notion, Slack source ingestion, OneDrive 추가
+11. 첫 end-to-end Slack 답변 흐름이 동작한 뒤 Notion과 Slack source ingestion 추가
 
 ## 초기 구현 기본값
 
