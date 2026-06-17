@@ -171,8 +171,3 @@ CREATE INDEX idx_documents_source_external ON external_documents(data_source_id,
 CREATE INDEX idx_document_acl_principal ON document_acl_entries(principal_key);
 CREATE INDEX idx_document_acl_document ON document_acl_entries(document_id);
 CREATE INDEX idx_chunks_document ON document_chunks(document_id);
-
-CREATE INDEX idx_embeddings_vector
-ON document_embeddings
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);

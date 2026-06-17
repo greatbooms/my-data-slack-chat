@@ -666,12 +666,9 @@ CREATE INDEX idx_documents_source_external ON external_documents(data_source_id,
 CREATE INDEX idx_document_acl_principal ON document_acl_entries(principal_key);
 CREATE INDEX idx_document_acl_document ON document_acl_entries(document_id);
 CREATE INDEX idx_chunks_document ON document_chunks(document_id);
-
-CREATE INDEX idx_embeddings_vector
-ON document_embeddings
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
 ```
+
+Note: IVFFlat 같은 pgvector approximate index는 대표성 있는 embedding 데이터가 쌓인 뒤 row count 기준으로 `lists`를 선택할 수 있을 때 후속 migration에서 추가한다.
 
 - [ ] **Step 4: migration 테스트 통과 확인**
 
