@@ -4,6 +4,8 @@ import com.mydata.auth.Permission;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.datasources.DataSourceEntity;
+import com.mydata.embeddings.DocumentEmbeddingRepository;
+import com.mydata.embeddings.EmbeddingClient;
 import com.mydata.documents.DocumentAclEntryEntity;
 import com.mydata.documents.DocumentAclEntryRepository;
 import com.mydata.documents.DocumentChunkEntity;
@@ -24,22 +26,29 @@ public class IngestionPipelineService {
     private final DocumentAclEntryRepository aclEntries;
     private final DocumentChunkRepository chunks;
     private final Chunker chunker;
+    private final EmbeddingClient embeddingClient;
+    private final DocumentEmbeddingRepository embeddings;
 
     public IngestionPipelineService(
         ExternalDocumentRepository documents,
         DocumentAclEntryRepository aclEntries,
         DocumentChunkRepository chunks,
-        Chunker chunker
+        Chunker chunker,
+        EmbeddingClient embeddingClient,
+        DocumentEmbeddingRepository embeddings
     ) {
         this.documents = documents;
         this.aclEntries = aclEntries;
         this.chunks = chunks;
         this.chunker = chunker;
+        this.embeddingClient = embeddingClient;
+        this.embeddings = embeddings;
     }
 
     public void ingest(DataSourceEntity dataSource, RawExternalDocument rawDocument) {
         var existingDocument = documents.findByDataSourceIdAndExternalId(dataSource.getId(), rawDocument.externalId());
         if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
+            backfillMissingEmbeddings(existingDocument.get());
             return;
         }
 
@@ -61,7 +70,8 @@ public class IngestionPipelineService {
         document = documents.saveAndFlush(document);
 
         replaceAclEntries(document, rawDocument.aclEntries());
-        replaceChunks(document, rawDocument.content().text());
+        List<DocumentChunkEntity> savedChunks = replaceChunks(document, rawDocument.content().text());
+        writeEmbeddings(savedChunks);
     }
 
     private void replaceAclEntries(ExternalDocumentEntity document, List<RawAclEntry> rawAclEntries) {
@@ -84,7 +94,7 @@ public class IngestionPipelineService {
         aclEntries.flush();
     }
 
-    private void replaceChunks(ExternalDocumentEntity document, String text) {
+    private List<DocumentChunkEntity> replaceChunks(ExternalDocumentEntity document, String text) {
         chunks.deleteAll(chunks.findByDocumentIdOrderByChunkIndex(document.getId()));
         chunks.flush();
 
@@ -99,8 +109,27 @@ public class IngestionPipelineService {
                 rawChunk.tokenCount()
             ));
         }
-        chunks.saveAll(replacements);
+        List<DocumentChunkEntity> savedChunks = chunks.saveAll(replacements);
         chunks.flush();
+        return savedChunks;
+    }
+
+    private void backfillMissingEmbeddings(ExternalDocumentEntity document) {
+        List<DocumentChunkEntity> existingChunks = chunks.findByDocumentIdOrderByChunkIndex(document.getId());
+        List<DocumentChunkEntity> missingChunks = existingChunks.stream()
+            .filter(chunk -> !embeddings.existsByChunkIdAndModel(chunk.getId(), embeddingClient.model()))
+            .toList();
+        writeEmbeddings(missingChunks);
+    }
+
+    private void writeEmbeddings(List<DocumentChunkEntity> chunks) {
+        for (DocumentChunkEntity chunk : chunks) {
+            embeddings.upsert(
+                chunk.getId(),
+                embeddingClient.model(),
+                embeddingClient.embed(chunk.getContent())
+            );
+        }
     }
 
     private boolean isUnchanged(ExternalDocumentEntity document, RawExternalDocument rawDocument) {
