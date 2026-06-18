@@ -20,9 +20,15 @@ public class RetrievalService {
         if (principalKeys == null || principalKeys.isEmpty() || limit <= 0) {
             return List.of();
         }
+        List<String> effectivePrincipalKeys = principalKeys.stream()
+            .filter(principalKey -> principalKey != null && !principalKey.isBlank())
+            .toList();
+        if (effectivePrincipalKeys.isEmpty()) {
+            return List.of();
+        }
         return searchRepository.search(
             workspaceId,
-            principalKeys,
+            effectivePrincipalKeys,
             embeddings.model(),
             embeddings.embed(query),
             limit

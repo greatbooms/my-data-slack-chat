@@ -36,6 +36,9 @@ public class ExternalDocumentEntity extends BaseEntity {
     @Column(nullable = false, columnDefinition = "text")
     private String title;
 
+    @Column(columnDefinition = "text")
+    private String uri;
+
     @Column(name = "content_hash", columnDefinition = "text")
     private String contentHash;
 
@@ -57,12 +60,25 @@ public class ExternalDocumentEntity extends BaseEntity {
         String title,
         String contentHash
     ) {
+        return create(workspaceId, dataSourceId, externalId, sourceType, title, null, contentHash);
+    }
+
+    public static ExternalDocumentEntity create(
+        UUID workspaceId,
+        UUID dataSourceId,
+        String externalId,
+        String sourceType,
+        String title,
+        String uri,
+        String contentHash
+    ) {
         ExternalDocumentEntity document = new ExternalDocumentEntity();
         document.workspaceId = workspaceId;
         document.dataSourceId = dataSourceId;
         document.externalId = externalId;
         document.sourceType = sourceType;
         document.title = title;
+        document.uri = uri;
         document.contentHash = contentHash;
         document.metadataJson = JsonMaps.EMPTY_OBJECT;
         return document;
@@ -77,8 +93,13 @@ public class ExternalDocumentEntity extends BaseEntity {
     }
 
     public void updateFromIngestion(String sourceType, String title, String contentHash) {
+        updateFromIngestion(sourceType, title, null, contentHash);
+    }
+
+    public void updateFromIngestion(String sourceType, String title, String uri, String contentHash) {
         this.sourceType = sourceType;
         this.title = title;
+        this.uri = uri;
         this.contentHash = contentHash;
     }
 }

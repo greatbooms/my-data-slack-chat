@@ -13,6 +13,7 @@ import com.mydata.documents.DocumentChunkRepository;
 import com.mydata.documents.ExternalDocumentEntity;
 import com.mydata.documents.ExternalDocumentRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,7 +46,9 @@ public class IngestionPipelineService {
         this.embeddings = embeddings;
     }
 
+    @Transactional
     public void ingest(DataSourceEntity dataSource, RawExternalDocument rawDocument) {
+        validateAclEntries(rawDocument.aclEntries());
         var existingDocument = documents.findByDataSourceIdAndExternalId(dataSource.getId(), rawDocument.externalId());
         if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
             backfillMissingEmbeddings(existingDocument.get());
@@ -59,12 +62,14 @@ public class IngestionPipelineService {
                 rawDocument.externalId(),
                 rawDocument.sourceType().name(),
                 rawDocument.title(),
+                rawDocument.uri(),
                 rawDocument.contentHash()
             ));
 
         document.updateFromIngestion(
             rawDocument.sourceType().name(),
             rawDocument.title(),
+            rawDocument.uri(),
             rawDocument.contentHash()
         );
         document = documents.saveAndFlush(document);
@@ -80,9 +85,6 @@ public class IngestionPipelineService {
 
         List<DocumentAclEntryEntity> replacements = new ArrayList<>();
         for (RawAclEntry rawAclEntry : rawAclEntries) {
-            if (!Permission.READ.name().equals(rawAclEntry.permission())) {
-                throw new IllegalArgumentException("Unsupported ACL permission: " + rawAclEntry.permission());
-            }
             replacements.add(DocumentAclEntryEntity.read(
                 document,
                 rawAclEntry.principalKey(),
@@ -92,6 +94,17 @@ public class IngestionPipelineService {
         }
         aclEntries.saveAll(replacements);
         aclEntries.flush();
+    }
+
+    private void validateAclEntries(List<RawAclEntry> rawAclEntries) {
+        for (RawAclEntry rawAclEntry : rawAclEntries) {
+            if (rawAclEntry.principalKey() == null || rawAclEntry.principalKey().isBlank()) {
+                throw new IllegalArgumentException("ACL principal key must not be blank");
+            }
+            if (!Permission.READ.name().equals(rawAclEntry.permission())) {
+                throw new IllegalArgumentException("Unsupported ACL permission: " + rawAclEntry.permission());
+            }
+        }
     }
 
     private List<DocumentChunkEntity> replaceChunks(ExternalDocumentEntity document, String text) {
@@ -135,6 +148,7 @@ public class IngestionPipelineService {
     private boolean isUnchanged(ExternalDocumentEntity document, RawExternalDocument rawDocument) {
         return Objects.equals(document.getContentHash(), rawDocument.contentHash())
             && Objects.equals(document.getTitle(), rawDocument.title())
+            && Objects.equals(document.getUri(), rawDocument.uri())
             && existingAclKeys(document).equals(rawAclKeys(rawDocument.aclEntries()));
     }
 

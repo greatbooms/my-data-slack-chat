@@ -32,12 +32,13 @@ public class LocalTextConnector implements DataSourceConnector {
         String title = requiredConfig(dataSource, "title");
         String content = requiredConfig(dataSource, "content");
         String principalKey = requiredConfig(dataSource, "principalKey");
+        String uri = optionalConfig(dataSource, "uri");
 
         handler.handle(new RawExternalDocument(
             externalId,
             DataSourceType.LOCAL_TEXT,
             title,
-            null,
+            uri,
             MIME_TYPE,
             null,
             null,
@@ -55,6 +56,11 @@ public class LocalTextConnector implements DataSourceConnector {
             throw new IllegalArgumentException("Missing LOCAL_TEXT config value: " + key);
         }
         return value;
+    }
+
+    private String optionalConfig(DataSourceEntity dataSource, String key) {
+        String value = dataSource.configValue(key);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private String sha256(String content) {

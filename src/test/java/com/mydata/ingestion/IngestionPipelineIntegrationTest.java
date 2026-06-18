@@ -38,6 +38,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
     @Autowired IngestionWorker worker;
+    @Autowired IngestionPipelineService pipeline;
     @Autowired ExternalDocumentRepository documents;
     @Autowired DocumentAclEntryRepository aclEntries;
     @Autowired DocumentChunkRepository chunks;
@@ -166,6 +167,86 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             .satisfies(acl -> assertThat(acl.getPrincipalKey()).isEqualTo(PrincipalKeys.user(secondUser.getId())));
         assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
             .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
+    void directPipelineRejectsBlankAclPrincipalAndRollsBackDocumentWrites() {
+        UserEntity user = users.save(UserEntity.create("blank-acl-owner@example.com", "Blank ACL Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Blank ACL workspace"));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
+            dataSource,
+            rawLocalTextDocument(
+                "blank-principal-note",
+                "Blank principal",
+                "blank principal content",
+                null,
+                List.of(new RawAclEntry("   ", "READ", false, "TEST"))
+            )
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ACL principal key");
+
+        assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "blank-principal-note"))
+            .isEmpty();
+    }
+
+    @Test
+    void directPipelineRollsBackDocumentWritesWhenAclPermissionIsUnsupported() {
+        UserEntity user = users.save(UserEntity.create("write-acl-owner@example.com", "Write ACL Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Write ACL workspace"));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
+            dataSource,
+            rawLocalTextDocument(
+                "write-permission-note",
+                "Write permission",
+                "write permission content",
+                null,
+                List.of(new RawAclEntry(PrincipalKeys.user(user.getId()), "WRITE", false, "TEST"))
+            )
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Unsupported ACL permission");
+
+        assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "write-permission-note"))
+            .isEmpty();
+    }
+
+    private RawExternalDocument rawLocalTextDocument(
+        String externalId,
+        String title,
+        String content,
+        String uri,
+        List<RawAclEntry> aclEntries
+    ) {
+        return new RawExternalDocument(
+            externalId,
+            DataSourceType.LOCAL_TEXT,
+            title,
+            uri,
+            "text/plain",
+            null,
+            null,
+            externalId + "-hash",
+            Map.of(),
+            new RawContent(content, "text/plain"),
+            aclEntries
+        );
     }
 
     @TestConfiguration

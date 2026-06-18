@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,6 +48,7 @@ class PgVectorSearchRepositoryTest extends PostgresIntegrationTest {
         source.putConfig("externalId", "note-1");
         source.putConfig("title", "Searchable note");
         source.putConfig("content", "project alpha budget planning");
+        source.putConfig("uri", "local://note-1");
         source.putConfig("principalKey", PrincipalKeys.user(owner.getId()));
         source = dataSources.saveAndFlush(source);
 
@@ -88,6 +90,59 @@ class PgVectorSearchRepositoryTest extends PostgresIntegrationTest {
         assertThat(embeddingCount).isEqualTo(1);
         assertThat(visible).hasSize(1);
         assertThat(visible.getFirst().title()).isEqualTo("Searchable note");
+        assertThat(visible.getFirst().uri()).isEqualTo("local://note-1");
+        assertThat(hidden).isEmpty();
+    }
+
+    @Test
+    void ignoresBlankRequesterPrincipalsEvenIfLegacyBlankAclRowsExist() {
+        UserEntity owner = users.save(UserEntity.create("blank-retrieval-owner@example.com", "Blank Retrieval Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Blank retrieval workspace"));
+        DataSourceEntity source = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        source.putConfig("externalId", "blank-acl-note");
+        source.putConfig("title", "Blank ACL note");
+        source.putConfig("content", "legacy blank acl content");
+        source.putConfig("principalKey", PrincipalKeys.user(owner.getId()));
+        source = dataSources.saveAndFlush(source);
+        IngestionJobEntity job = jobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            source.getId(),
+            IngestionTriggerType.MANUAL,
+            owner.getId()
+        ));
+        worker.run(job.getId());
+        UUID documentId = jdbcTemplate.queryForObject(
+            """
+            SELECT id
+            FROM external_documents
+            WHERE data_source_id = ?
+              AND external_id = ?
+            """,
+            UUID.class,
+            source.getId(),
+            "blank-acl-note"
+        );
+        jdbcTemplate.update(
+            """
+            INSERT INTO document_acl_entries (document_id, principal_key, permission, source)
+            VALUES (?, '', 'READ', 'LEGACY')
+            """,
+            documentId
+        );
+
+        List<RetrievedChunk> hidden = retrievalService.retrieve(
+            workspace.getId(),
+            List.of("", "   "),
+            "legacy blank",
+            5
+        );
+
         assertThat(hidden).isEmpty();
     }
 }
