@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -38,7 +39,13 @@ public class SlackEventController {
             return ResponseEntity.status(401).body("invalid signature");
         }
 
-        JsonNode root = objectMapper.readTree(body);
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(body);
+        } catch (JacksonException e) {
+            return ResponseEntity.badRequest().body("malformed json");
+        }
+
         if ("url_verification".equals(root.path("type").asString())) {
             return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_PLAIN)

@@ -60,4 +60,14 @@ class SlackEventControllerTest extends PostgresIntegrationTest {
                     """))
             .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void returnsBadRequestForMalformedJsonAfterValidSignature() throws Exception {
+        mockMvc.perform(post("/slack/events")
+                .header("X-Slack-Request-Timestamp", "1531420618")
+                .header("X-Slack-Signature", "test-bypass")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"type\":\"event_callback\""))
+            .andExpect(status().isBadRequest());
+    }
 }

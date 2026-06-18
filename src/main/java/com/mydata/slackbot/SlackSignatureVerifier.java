@@ -4,13 +4,22 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.util.HexFormat;
 
 public class SlackSignatureVerifier {
+    private static final long MAX_REQUEST_AGE_SECONDS = 300;
+
     private final String signingSecret;
+    private final Clock clock;
 
     public SlackSignatureVerifier(String signingSecret) {
+        this(signingSecret, Clock.systemUTC());
+    }
+
+    SlackSignatureVerifier(String signingSecret, Clock clock) {
         this.signingSecret = signingSecret;
+        this.clock = clock;
     }
 
     public boolean isValid(String timestamp, String body, String signature) {
@@ -18,6 +27,9 @@ public class SlackSignatureVerifier {
             return false;
         }
         if (!signature.startsWith("v0=")) {
+            return false;
+        }
+        if (!hasFreshTimestamp(timestamp)) {
             return false;
         }
 
@@ -32,6 +44,16 @@ public class SlackSignatureVerifier {
                 signature.getBytes(StandardCharsets.UTF_8)
             );
         } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean hasFreshTimestamp(String timestamp) {
+        try {
+            long requestEpochSeconds = Long.parseLong(timestamp);
+            long ageSeconds = Math.abs(clock.instant().getEpochSecond() - requestEpochSeconds);
+            return ageSeconds <= MAX_REQUEST_AGE_SECONDS;
+        } catch (NumberFormatException e) {
             return false;
         }
     }
