@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg17
     container_name: my-data-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: my_data
       POSTGRES_USER: my_data
