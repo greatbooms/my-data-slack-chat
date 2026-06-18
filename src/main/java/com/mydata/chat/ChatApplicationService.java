@@ -47,18 +47,13 @@ public class ChatApplicationService {
             throw new IllegalArgumentException("externalThreadId is required");
         }
 
-        ChatSessionEntity session = sessions.findByChannel(
-            workspaceId,
-            channelType,
-            externalChannelId,
-            externalThreadId
-        ).orElseGet(() -> sessions.save(ChatSessionEntity.create(
+        ChatSessionEntity session = findOrCreateSession(
             workspaceId,
             channelType,
             externalChannelId,
             externalThreadId,
             userId
-        )));
+        );
 
         messages.save(ChatMessageEntity.create(session.getId(), "USER", question));
         List<RetrievedChunk> chunks = retrieval.retrieve(workspaceId, principalKeys, question, RETRIEVAL_LIMIT);
@@ -90,6 +85,28 @@ public class ChatApplicationService {
         }
 
         return new Answer(session.getId(), content, List.copyOf(answerCitations));
+    }
+
+    private ChatSessionEntity findOrCreateSession(
+        UUID workspaceId,
+        String channelType,
+        String externalChannelId,
+        String externalThreadId,
+        UUID userId
+    ) {
+        return sessions.findByChannel(workspaceId, channelType, externalChannelId, externalThreadId)
+            .orElseGet(() -> {
+                sessions.insertIfAbsent(
+                    UUID.randomUUID(),
+                    workspaceId,
+                    channelType,
+                    externalChannelId,
+                    externalThreadId,
+                    userId
+                );
+                return sessions.findByChannel(workspaceId, channelType, externalChannelId, externalThreadId)
+                    .orElseThrow(() -> new IllegalStateException("chat session was not created"));
+            });
     }
 
     public record Answer(UUID sessionId, String content, List<Citation> citations) {

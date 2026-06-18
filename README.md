@@ -24,6 +24,14 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
 Local schema changes are managed by Liquibase.
+The `local` profile provides local-only fallback values for `ADMIN_API_TOKEN`
+and `SLACK_SIGNING_SECRET`.
+
+Non-local runs must provide security secrets explicitly:
+
+```bash
+ADMIN_API_TOKEN=... SLACK_SIGNING_SECRET=... ./gradlew bootRun
+```
 
 ## Current Scope
 

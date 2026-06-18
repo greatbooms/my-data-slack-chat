@@ -18,6 +18,9 @@ public class SlackSignatureVerifier {
     }
 
     SlackSignatureVerifier(String signingSecret, Clock clock) {
+        if (signingSecret == null || signingSecret.isBlank()) {
+            throw new IllegalArgumentException("signing secret must not be blank");
+        }
         this.signingSecret = signingSecret;
         this.clock = clock;
     }

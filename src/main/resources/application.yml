@@ -17,9 +17,9 @@ spring:
     change-log: classpath:/db/changelog/db.changelog-master.sql
 
 my-data:
-  admin-token: ${ADMIN_API_TOKEN:local-admin-token}
+  admin-token: ${ADMIN_API_TOKEN}
   slack:
-    signing-secret: ${SLACK_SIGNING_SECRET:local-signing-secret}
+    signing-secret: ${SLACK_SIGNING_SECRET}
   embedding:
     model: ${EMBEDDING_MODEL:deterministic-1536}
     dimensions: 1536

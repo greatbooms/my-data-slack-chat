@@ -11,8 +11,16 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SlackSignatureVerifierTest {
+    @Test
+    void rejectsBlankConfiguredSigningSecret() {
+        assertThatThrownBy(() -> new SlackSignatureVerifier(" "))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("signing secret");
+    }
+
     @Test
     void validatesKnownSlackHmacSignature() {
         SlackSignatureVerifier verifier = new SlackSignatureVerifier(
