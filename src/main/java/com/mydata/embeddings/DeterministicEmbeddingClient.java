@@ -35,7 +35,7 @@ public class DeterministicEmbeddingClient implements EmbeddingClient {
         try {
             return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 not available", exception);
+            throw new IllegalStateException("SHA-256을 사용할 수 없습니다", exception);
         }
     }
 }

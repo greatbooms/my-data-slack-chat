@@ -77,7 +77,7 @@ public class DataSourceEntity extends BaseEntity {
             config.put(key, value);
             configJson = OBJECT_MAPPER.writeValueAsString(config);
         } catch (Exception exception) {
-            throw new IllegalStateException("Failed to update data source config", exception);
+            throw new IllegalStateException("데이터소스 설정을 갱신하지 못했습니다", exception);
         }
     }
 
@@ -86,7 +86,7 @@ public class DataSourceEntity extends BaseEntity {
             Object value = readConfig().get(key);
             return value instanceof String stringValue ? stringValue : null;
         } catch (Exception exception) {
-            throw new IllegalStateException("Failed to read data source config", exception);
+            throw new IllegalStateException("데이터소스 설정을 읽지 못했습니다", exception);
         }
     }
 

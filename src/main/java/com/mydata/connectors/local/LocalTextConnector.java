@@ -53,7 +53,7 @@ public class LocalTextConnector implements DataSourceConnector {
     private String requiredConfig(DataSourceEntity dataSource, String key) {
         String value = dataSource.configValue(key);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing LOCAL_TEXT config value: " + key);
+            throw new IllegalArgumentException("LOCAL_TEXT 설정값이 없습니다: " + key);
         }
         return value;
     }
@@ -68,7 +68,7 @@ public class LocalTextConnector implements DataSourceConnector {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(content.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
+            throw new IllegalStateException("SHA-256을 사용할 수 없습니다", exception);
         }
     }
 }

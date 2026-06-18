@@ -58,10 +58,10 @@ public class IngestionWorker {
         transactions.executeWithoutResult(status -> {
             IngestionJobEntity job = loadJob(jobId);
             DataSourceEntity dataSource = dataSources.findById(job.getDataSourceId())
-                .orElseThrow(() -> new IllegalStateException("Data source not found: " + job.getDataSourceId()));
+                .orElseThrow(() -> new IllegalStateException("데이터소스를 찾을 수 없습니다: " + job.getDataSourceId()));
             DataSourceConnector connector = connectors.get(dataSource.getType());
             if (connector == null) {
-                throw new IllegalStateException("No connector registered for " + dataSource.getType());
+                throw new IllegalStateException("등록된 커넥터가 없습니다: " + dataSource.getType());
             }
 
             connector.fetchChanges(dataSource, new SyncCursor(Map.of()), rawDocument -> pipeline.ingest(dataSource, rawDocument));
@@ -78,6 +78,6 @@ public class IngestionWorker {
 
     private IngestionJobEntity loadJob(UUID jobId) {
         return ingestionJobs.findById(jobId)
-            .orElseThrow(() -> new IllegalArgumentException("Ingestion job not found: " + jobId));
+            .orElseThrow(() -> new IllegalArgumentException("수집 job을 찾을 수 없습니다: " + jobId));
     }
 }

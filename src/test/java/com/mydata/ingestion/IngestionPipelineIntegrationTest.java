@@ -192,7 +192,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             )
         ))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ACL principal key");
+            .hasMessageContaining("ACL principal key는");
 
         assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "blank-principal-note"))
             .isEmpty();
@@ -221,7 +221,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             )
         ))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Unsupported ACL permission");
+            .hasMessageContaining("지원하지 않는 ACL 권한");
 
         assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "write-permission-note"))
             .isEmpty();

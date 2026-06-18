@@ -44,7 +44,7 @@ public class ChatApplicationService {
         String question
     ) {
         if (externalThreadId == null || externalThreadId.isBlank()) {
-            throw new IllegalArgumentException("externalThreadId is required");
+            throw new IllegalArgumentException("externalThreadId가 필요합니다");
         }
 
         ChatSessionEntity session = findOrCreateSession(
@@ -105,7 +105,7 @@ public class ChatApplicationService {
                     userId
                 );
                 return sessions.findByChannel(workspaceId, channelType, externalChannelId, externalThreadId)
-                    .orElseThrow(() -> new IllegalStateException("chat session was not created"));
+                    .orElseThrow(() -> new IllegalStateException("채팅 세션을 생성하지 못했습니다"));
             });
     }
 

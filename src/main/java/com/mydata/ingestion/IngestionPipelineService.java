@@ -99,10 +99,10 @@ public class IngestionPipelineService {
     private void validateAclEntries(List<RawAclEntry> rawAclEntries) {
         for (RawAclEntry rawAclEntry : rawAclEntries) {
             if (rawAclEntry.principalKey() == null || rawAclEntry.principalKey().isBlank()) {
-                throw new IllegalArgumentException("ACL principal key must not be blank");
+                throw new IllegalArgumentException("ACL principal key는 비어 있을 수 없습니다");
             }
             if (!Permission.READ.name().equals(rawAclEntry.permission())) {
-                throw new IllegalArgumentException("Unsupported ACL permission: " + rawAclEntry.permission());
+                throw new IllegalArgumentException("지원하지 않는 ACL 권한입니다: " + rawAclEntry.permission());
             }
         }
     }

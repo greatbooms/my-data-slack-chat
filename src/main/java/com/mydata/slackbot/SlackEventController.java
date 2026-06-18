@@ -36,14 +36,14 @@ public class SlackEventController {
         @RequestHeader(value = "X-Slack-Signature", required = false) String signature
     ) throws Exception {
         if (!hasValidSignature(timestamp, body, signature)) {
-            return ResponseEntity.status(401).body("invalid signature");
+            return ResponseEntity.status(401).body("Slack 서명이 올바르지 않습니다");
         }
 
         JsonNode root;
         try {
             root = objectMapper.readTree(body);
         } catch (JacksonException e) {
-            return ResponseEntity.badRequest().body("malformed json");
+            return ResponseEntity.badRequest().body("JSON 형식이 올바르지 않습니다");
         }
 
         if ("url_verification".equals(root.path("type").asString())) {

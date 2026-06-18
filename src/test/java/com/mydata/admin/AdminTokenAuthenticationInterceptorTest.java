@@ -9,6 +9,6 @@ class AdminTokenAuthenticationInterceptorTest {
     void rejectsBlankConfiguredAdminToken() {
         assertThatThrownBy(() -> new AdminTokenAuthenticationInterceptor(" "))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("admin token");
+            .hasMessageContaining("관리자 토큰");
     }
 }

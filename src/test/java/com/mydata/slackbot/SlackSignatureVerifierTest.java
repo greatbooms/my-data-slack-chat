@@ -18,7 +18,7 @@ class SlackSignatureVerifierTest {
     void rejectsBlankConfiguredSigningSecret() {
         assertThatThrownBy(() -> new SlackSignatureVerifier(" "))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("signing secret");
+            .hasMessageContaining("Slack signing secret");
     }
 
     @Test

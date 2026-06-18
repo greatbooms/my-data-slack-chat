@@ -33,7 +33,7 @@ public class SecuritySecretValidator {
             return;
         }
         if (LOCAL_ADMIN_TOKEN.equals(adminToken) || LOCAL_SIGNING_SECRET.equals(slackSigningSecret)) {
-            throw new IllegalStateException("local defaults are only allowed for local and test profiles");
+            throw new IllegalStateException("로컬 기본 보안값은 local 또는 test 프로필에서만 사용할 수 있습니다");
         }
     }
 
@@ -43,7 +43,7 @@ public class SecuritySecretValidator {
 
     private static void rejectBlank(String propertyName, String value) {
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException(propertyName + " must not be blank");
+            throw new IllegalStateException(propertyName + " 값은 비어 있을 수 없습니다");
         }
     }
 }

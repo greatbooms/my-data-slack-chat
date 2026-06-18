@@ -17,7 +17,7 @@ class SecuritySecretValidatorTest {
 
         assertThatThrownBy(validator::validate)
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("my-data.admin-token");
+            .hasMessageContaining("my-data.admin-token 값");
     }
 
     @Test
@@ -30,7 +30,7 @@ class SecuritySecretValidatorTest {
 
         assertThatThrownBy(validator::validate)
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("my-data.slack.signing-secret");
+            .hasMessageContaining("my-data.slack.signing-secret 값");
     }
 
     @Test
@@ -43,7 +43,7 @@ class SecuritySecretValidatorTest {
 
         assertThatThrownBy(validator::validate)
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("local defaults");
+            .hasMessageContaining("로컬 기본 보안값");
     }
 
     @Test
