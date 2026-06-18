@@ -1953,7 +1953,7 @@ class SlackSignatureVerifierTest {
         SlackSignatureVerifier verifier = new SlackSignatureVerifier("secret");
         String timestamp = "1531420618";
         String body = "token=xyzz&team_id=T1&api_app_id=A1";
-        String signature = "v0=085dc07b2c42b48f4d9996b12898475010ff39e6307033272a9b3e064e48e4d7";
+        String signature = "v0=30317748305cb9d57926e965f5cc6d3a776950ff47a8d4957f4db8efc008eea8";
 
         assertThat(verifier.isValid(timestamp, body, signature)).isTrue();
     }
