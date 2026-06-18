@@ -14,6 +14,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class IngestionPipelineService {
@@ -36,7 +39,7 @@ public class IngestionPipelineService {
 
     public void ingest(DataSourceEntity dataSource, RawExternalDocument rawDocument) {
         var existingDocument = documents.findByDataSourceIdAndExternalId(dataSource.getId(), rawDocument.externalId());
-        if (existingDocument.isPresent() && rawDocument.contentHash().equals(existingDocument.get().getContentHash())) {
+        if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
             return;
         }
 
@@ -73,7 +76,7 @@ public class IngestionPipelineService {
             replacements.add(DocumentAclEntryEntity.read(
                 document,
                 rawAclEntry.principalKey(),
-                "MANUAL",
+                normalizedSource(rawAclEntry),
                 rawAclEntry.inherited()
             ));
         }
@@ -98,5 +101,40 @@ public class IngestionPipelineService {
         }
         chunks.saveAll(replacements);
         chunks.flush();
+    }
+
+    private boolean isUnchanged(ExternalDocumentEntity document, RawExternalDocument rawDocument) {
+        return Objects.equals(document.getContentHash(), rawDocument.contentHash())
+            && Objects.equals(document.getTitle(), rawDocument.title())
+            && existingAclKeys(document).equals(rawAclKeys(rawDocument.aclEntries()));
+    }
+
+    private Set<AclKey> existingAclKeys(ExternalDocumentEntity document) {
+        return aclEntries.findByDocumentId(document.getId()).stream()
+            .map(acl -> new AclKey(
+                acl.getPrincipalKey(),
+                acl.getPermission().name(),
+                acl.isInherited(),
+                acl.getSource()
+            ))
+            .collect(Collectors.toSet());
+    }
+
+    private Set<AclKey> rawAclKeys(List<RawAclEntry> rawAclEntries) {
+        return rawAclEntries.stream()
+            .map(rawAclEntry -> new AclKey(
+                rawAclEntry.principalKey(),
+                rawAclEntry.permission(),
+                rawAclEntry.inherited(),
+                normalizedSource(rawAclEntry)
+            ))
+            .collect(Collectors.toSet());
+    }
+
+    private String normalizedSource(RawAclEntry rawAclEntry) {
+        return rawAclEntry.source() == null || rawAclEntry.source().isBlank() ? "MANUAL" : rawAclEntry.source();
+    }
+
+    private record AclKey(String principalKey, String permission, boolean inherited, String source) {
     }
 }

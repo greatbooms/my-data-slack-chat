@@ -1,5 +1,11 @@
 package com.mydata.ingestion;
 
+import com.mydata.connectors.core.DataSourceConnector;
+import com.mydata.connectors.core.DocumentHandler;
+import com.mydata.connectors.core.RawAclEntry;
+import com.mydata.connectors.core.RawContent;
+import com.mydata.connectors.core.RawExternalDocument;
+import com.mydata.connectors.core.SyncCursor;
 import com.mydata.auth.PrincipalKeys;
 import com.mydata.auth.Permission;
 import com.mydata.datasources.DataSourceEntity;
@@ -18,6 +24,11 @@ import com.mydata.workspaces.WorkspaceEntity;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -80,5 +91,111 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 assertThat(chunk.getTokenCount()).isEqualTo(8);
             });
         assertThat(reloadedJob.getStatus()).isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
+    void failedPipelineRollsBackDocumentWritesButMarksJobFailed() {
+        UserEntity user = users.save(UserEntity.create("notion-owner@example.com", "Notion Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Notion workspace"));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.NOTION,
+            "Notion notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        IngestionJobEntity job = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            dataSource.getId(),
+            IngestionTriggerType.MANUAL,
+            user.getId()
+        ));
+
+        worker.run(job.getId());
+
+        assertThat(ingestionJobs.findById(job.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.FAILED);
+        assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "bad-note"))
+            .isEmpty();
+    }
+
+    @Test
+    void sameContentTitleAndAclChangesAreRefreshed() {
+        UserEntity firstUser = users.save(UserEntity.create("first-local-owner@example.com", "First Owner"));
+        UserEntity secondUser = users.save(UserEntity.create("second-local-owner@example.com", "Second Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(firstUser.getId(), "Shared local workspace"));
+        DataSourceEntity dataSource = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        dataSource.putConfig("externalId", "same-note");
+        dataSource.putConfig("title", "First title");
+        dataSource.putConfig("content", "same content");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(firstUser.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+        IngestionJobEntity firstJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            dataSource.getId(),
+            IngestionTriggerType.MANUAL,
+            firstUser.getId()
+        ));
+        worker.run(firstJob.getId());
+
+        dataSource.putConfig("title", "Second title");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(secondUser.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+        IngestionJobEntity secondJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            dataSource.getId(),
+            IngestionTriggerType.MANUAL,
+            secondUser.getId()
+        ));
+
+        worker.run(secondJob.getId());
+
+        ExternalDocumentEntity document = documents
+            .findByDataSourceIdAndExternalId(dataSource.getId(), "same-note")
+            .orElseThrow();
+        assertThat(document.getTitle()).isEqualTo("Second title");
+        assertThat(aclEntries.findByDocumentId(document.getId()))
+            .hasSize(1)
+            .first()
+            .satisfies(acl -> assertThat(acl.getPrincipalKey()).isEqualTo(PrincipalKeys.user(secondUser.getId())));
+        assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @TestConfiguration
+    static class FailingNotionConnectorConfiguration {
+        @Bean
+        DataSourceConnector failingNotionConnector() {
+            return new DataSourceConnector() {
+                @Override
+                public DataSourceType supports() {
+                    return DataSourceType.NOTION;
+                }
+
+                @Override
+                public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
+                    handler.handle(new RawExternalDocument(
+                        "bad-note",
+                        DataSourceType.NOTION,
+                        "Bad note",
+                        null,
+                        "text/plain",
+                        null,
+                        null,
+                        "bad-hash",
+                        Map.of(),
+                        new RawContent("bad content", "text/plain"),
+                        List.of(new RawAclEntry(PrincipalKeys.user(dataSource.getWorkspaceId()), "WRITE", false, "TEST"))
+                    ));
+                    return cursor;
+                }
+            };
+        }
     }
 }

@@ -6,7 +6,7 @@ import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -19,28 +19,44 @@ public class IngestionWorker {
     private final DataSourceRepository dataSources;
     private final IngestionPipelineService pipeline;
     private final Map<DataSourceType, DataSourceConnector> connectors;
+    private final TransactionTemplate transactions;
 
     public IngestionWorker(
         IngestionJobRepository ingestionJobs,
         DataSourceRepository dataSources,
         IngestionPipelineService pipeline,
-        List<DataSourceConnector> connectors
+        List<DataSourceConnector> connectors,
+        TransactionTemplate transactions
     ) {
         this.ingestionJobs = ingestionJobs;
         this.dataSources = dataSources;
         this.pipeline = pipeline;
+        this.transactions = transactions;
         this.connectors = new EnumMap<>(DataSourceType.class);
         for (DataSourceConnector connector : connectors) {
             this.connectors.put(connector.supports(), connector);
         }
     }
 
-    @Transactional
     public void run(UUID jobId) {
-        IngestionJobEntity job = ingestionJobs.findById(jobId)
-            .orElseThrow(() -> new IllegalArgumentException("Ingestion job not found: " + jobId));
-        job.markRunning();
+        markRunning(jobId);
         try {
+            ingestAndMarkSucceeded(jobId);
+        } catch (RuntimeException exception) {
+            markFailed(jobId, exception.getMessage());
+        }
+    }
+
+    private void markRunning(UUID jobId) {
+        transactions.executeWithoutResult(status -> {
+            IngestionJobEntity job = loadJob(jobId);
+            job.markRunning();
+        });
+    }
+
+    private void ingestAndMarkSucceeded(UUID jobId) {
+        transactions.executeWithoutResult(status -> {
+            IngestionJobEntity job = loadJob(jobId);
             DataSourceEntity dataSource = dataSources.findById(job.getDataSourceId())
                 .orElseThrow(() -> new IllegalStateException("Data source not found: " + job.getDataSourceId()));
             DataSourceConnector connector = connectors.get(dataSource.getType());
@@ -50,8 +66,18 @@ public class IngestionWorker {
 
             connector.fetchChanges(dataSource, new SyncCursor(Map.of()), rawDocument -> pipeline.ingest(dataSource, rawDocument));
             job.markSucceeded();
-        } catch (RuntimeException exception) {
-            job.markFailed(exception.getMessage());
-        }
+        });
+    }
+
+    private void markFailed(UUID jobId, String errorMessage) {
+        transactions.executeWithoutResult(status -> {
+            IngestionJobEntity job = loadJob(jobId);
+            job.markFailed(errorMessage);
+        });
+    }
+
+    private IngestionJobEntity loadJob(UUID jobId) {
+        return ingestionJobs.findById(jobId)
+            .orElseThrow(() -> new IllegalArgumentException("Ingestion job not found: " + jobId));
     }
 }
