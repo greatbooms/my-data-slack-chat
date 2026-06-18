@@ -41,6 +41,6 @@ class LiquibaseMigrationTest extends PostgresIntegrationTest {
 
         assertThat(tableCount).isEqualTo(10);
         assertThat(vectorVersion).isNotBlank();
-        assertThat(liquibaseChanges).isOne();
+        assertThat(liquibaseChanges).isEqualTo(2);
     }
 }

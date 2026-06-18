@@ -17,10 +17,12 @@ import com.mydata.workspaces.WorkspaceEntity;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ChatApplicationServiceTest extends PostgresIntegrationTest {
     @Autowired UserRepository users;
@@ -29,6 +31,7 @@ class ChatApplicationServiceTest extends PostgresIntegrationTest {
     @Autowired IngestionJobRepository ingestionJobs;
     @Autowired IngestionWorker worker;
     @Autowired ChatApplicationService chat;
+    @Autowired ChatSessionRepository sessions;
     @Autowired ChatMessageRepository messages;
     @Autowired ChatRetrievalCitationRepository citations;
 
@@ -99,5 +102,61 @@ class ChatApplicationServiceTest extends PostgresIntegrationTest {
                 assertThat(citation.getScore()).isNotNull();
                 assertThat(citation.getChunkId()).isEqualTo(answer.citations().getFirst().chunkId());
             });
+    }
+
+    @Test
+    void rejectsMissingExternalThreadIdBeforePersistingMessages() {
+        UserEntity owner = users.save(UserEntity.create("thread-required-owner@example.com", "Thread Required"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Thread required workspace"));
+        long sessionCount = sessions.count();
+        long messageCount = messages.count();
+
+        assertThatThrownBy(() -> chat.answer(
+            workspace.getId(),
+            owner.getId(),
+            "SLACK",
+            "C123",
+            null,
+            List.of(PrincipalKeys.user(owner.getId())),
+            "alpha budget?"
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("externalThreadId");
+        assertThatThrownBy(() -> chat.answer(
+            workspace.getId(),
+            owner.getId(),
+            "SLACK",
+            "C123",
+            "   ",
+            List.of(PrincipalKeys.user(owner.getId())),
+            "alpha budget?"
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("externalThreadId");
+
+        assertThat(sessions.count()).isEqualTo(sessionCount);
+        assertThat(messages.count()).isEqualTo(messageCount);
+    }
+
+    @Test
+    void rejectsDuplicateChatSessionKeysAtDatabaseLevel() {
+        UserEntity owner = users.save(UserEntity.create("duplicate-chat-owner@example.com", "Duplicate Chat Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Duplicate chat workspace"));
+        sessions.saveAndFlush(ChatSessionEntity.create(
+            workspace.getId(),
+            "SLACK",
+            "C123",
+            "1710000000.000000",
+            owner.getId()
+        ));
+
+        assertThatThrownBy(() -> sessions.saveAndFlush(ChatSessionEntity.create(
+            workspace.getId(),
+            "SLACK",
+            "C123",
+            "1710000000.000000",
+            owner.getId()
+        )))
+            .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

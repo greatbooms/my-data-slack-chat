@@ -176,3 +176,12 @@ CREATE INDEX idx_documents_source_external ON external_documents(data_source_id,
 CREATE INDEX idx_document_acl_principal ON document_acl_entries(principal_key);
 CREATE INDEX idx_document_acl_document ON document_acl_entries(document_id);
 CREATE INDEX idx_chunks_document ON document_chunks(document_id);
+
+--changeset eric:002-unique-chat-session-external-thread
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_unique_external_thread
+    ON chat_sessions (
+        workspace_id,
+        channel_type,
+        COALESCE(external_channel_id, ''),
+        COALESCE(external_thread_id, '')
+    );

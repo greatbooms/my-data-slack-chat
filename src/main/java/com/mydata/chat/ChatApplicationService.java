@@ -43,6 +43,10 @@ public class ChatApplicationService {
         List<String> principalKeys,
         String question
     ) {
+        if (externalThreadId == null || externalThreadId.isBlank()) {
+            throw new IllegalArgumentException("externalThreadId is required");
+        }
+
         ChatSessionEntity session = sessions.findByChannel(
             workspaceId,
             channelType,
