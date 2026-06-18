@@ -75,4 +75,10 @@ public class ExternalDocumentEntity extends BaseEntity {
     public void addChunk(DocumentChunkEntity chunk) {
         chunks.add(chunk);
     }
+
+    public void updateFromIngestion(String sourceType, String title, String contentHash) {
+        this.sourceType = sourceType;
+        this.title = title;
+        this.contentHash = contentHash;
+    }
 }

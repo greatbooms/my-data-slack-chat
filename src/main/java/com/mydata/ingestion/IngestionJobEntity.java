@@ -58,4 +58,23 @@ public class IngestionJobEntity extends BaseEntity {
         job.requestedByUserId = requestedByUserId;
         return job;
     }
+
+    public void markRunning() {
+        status = IngestionJobStatus.RUNNING;
+        startedAt = OffsetDateTime.now();
+        finishedAt = null;
+        errorMessage = null;
+    }
+
+    public void markSucceeded() {
+        status = IngestionJobStatus.SUCCEEDED;
+        finishedAt = OffsetDateTime.now();
+        errorMessage = null;
+    }
+
+    public void markFailed(String errorMessage) {
+        status = IngestionJobStatus.FAILED;
+        finishedAt = OffsetDateTime.now();
+        this.errorMessage = errorMessage;
+    }
 }
