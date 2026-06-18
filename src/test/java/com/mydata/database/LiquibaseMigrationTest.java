@@ -7,12 +7,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class FlywayMigrationTest extends PostgresIntegrationTest {
+class LiquibaseMigrationTest extends PostgresIntegrationTest {
     @Autowired
     JdbcTemplate jdbcTemplate;
 
     @Test
-    void createsRequiredTablesAndVectorExtension() {
+    void createsRequiredTablesVectorExtensionAndLiquibaseChangeLog() {
         Integer tableCount = jdbcTemplate.queryForObject("""
             SELECT count(*) FROM information_schema.tables
             WHERE table_schema = 'public'
@@ -34,8 +34,13 @@ class FlywayMigrationTest extends PostgresIntegrationTest {
             "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
             String.class
         );
+        Integer liquibaseChanges = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM databasechangelog",
+            Integer.class
+        );
 
         assertThat(tableCount).isEqualTo(10);
         assertThat(vectorVersion).isNotBlank();
+        assertThat(liquibaseChanges).isOne();
     }
 }

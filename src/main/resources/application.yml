@@ -13,8 +13,8 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
-  flyway:
-    enabled: true
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.sql
 
 my-data:
   admin-token: ${ADMIN_API_TOKEN:local-admin-token}
