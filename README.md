@@ -89,17 +89,26 @@ set +a
 `.env` 파일은 `.gitignore`에 포함되어 있으므로 커밋되지 않습니다.
 공유용 예시는 `.env.example`만 관리합니다.
 
-### 주요 환경변수
+### 구동에 필요한 환경변수
 
-로컬 실행에서 주로 쓰는 환경변수는 다음과 같습니다.
+로컬 Docker DB를 그대로 쓰는 경우 최소 환경변수는 `SPRING_PROFILES_ACTIVE=local`입니다.
 
-- `SPRING_PROFILES_ACTIVE`: 로컬 실행 시 `local`
-- `SERVER_PORT`: 애플리케이션 포트
-- `DATABASE_URL`: PostgreSQL 접속 URL
-- `DATABASE_USERNAME`: PostgreSQL 사용자명
-- `DATABASE_PASSWORD`: PostgreSQL 비밀번호
-- `ADMIN_API_TOKEN`: 로컬 관리자 API 토큰
-- `SLACK_SIGNING_SECRET`: 로컬 Slack 서명 검증 시크릿
+```bash
+SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+```
+
+`.env.example`처럼 `.env`를 만들어 실행할 때 사용하는 전체 환경변수는 다음과 같습니다.
+
+| 환경변수 | 로컬 필수 여부 | 비로컬 필수 여부 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | 필수 | 선택 | 없음 | 로컬 실행 시 `local`로 설정합니다. |
+| `SERVER_PORT` | 선택 | 선택 | `50506` | 애플리케이션 HTTP 포트입니다. |
+| `DATABASE_URL` | 선택 | 권장 | local: `jdbc:postgresql://localhost:5433/my_data`, 그 외: `jdbc:postgresql://localhost:5432/my_data` | PostgreSQL 접속 URL입니다. |
+| `DATABASE_USERNAME` | 선택 | 권장 | `my_data` | PostgreSQL 사용자명입니다. |
+| `DATABASE_PASSWORD` | 선택 | 권장 | `my_data` | PostgreSQL 비밀번호입니다. |
+| `ADMIN_API_TOKEN` | 선택 | 필수 | local: `local-admin-token` | 관리자 API 호출 시 `X-Admin-Token` 헤더로 보낼 토큰입니다. |
+| `SLACK_SIGNING_SECRET` | 선택 | 필수 | local: `local-signing-secret` | Slack Events API 요청 서명 검증에 사용하는 시크릿입니다. |
+| `EMBEDDING_MODEL` | 선택 | 선택 | `deterministic-1536` | 임베딩 모델 이름입니다. 현재 로컬/테스트용 결정적 임베딩 클라이언트에서 사용합니다. |
 
 `local` 프로필은 개발 편의를 위해 로컬 전용 기본 보안값을 제공합니다.
 그래도 실제 Slack 앱을 연결할 때는 `.env`의 `SLACK_SIGNING_SECRET` 값을 Slack 앱 관리 화면의 Signing Secret 값으로 바꾸는 것을 권장합니다.
