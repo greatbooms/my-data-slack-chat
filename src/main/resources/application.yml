@@ -16,6 +16,9 @@ spring:
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.sql
 
+server:
+  port: ${SERVER_PORT:50506}
+
 my-data:
   admin-token: ${ADMIN_API_TOKEN}
   slack:

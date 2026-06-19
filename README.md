@@ -51,7 +51,7 @@ docker compose ps postgres
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
-기본 웹 포트는 Spring Boot 기본값인 `8080`입니다.
+기본 웹 포트는 `50506`입니다.
 다른 포트로 실행하려면 `SERVER_PORT`를 함께 지정합니다.
 
 ```bash
