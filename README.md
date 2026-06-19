@@ -6,7 +6,13 @@ Spring Boot 기반 개인 데이터 RAG 챗봇 기반 프로젝트입니다.
 
 - Java 21
 - Docker Desktop 또는 Docker Engine
-- 프로젝트 경로: `/Users/eric/workspace/my-data/.worktrees/mvp-foundation`
+
+저장소를 원하는 위치에 clone한 뒤 프로젝트 루트로 이동합니다.
+
+```bash
+git clone https://github.com/greatbooms/my-data-slack-chat.git
+cd my-data-slack-chat
+```
 
 ## 로컬 DB 실행
 
