@@ -37,7 +37,9 @@ docker compose ps postgres
 
 ## 로컬 애플리케이션 실행
 
-로컬 프로필로 실행합니다.
+### 방법 1. 기본값으로 바로 실행
+
+로컬 프로필은 기본 DB 접속값과 로컬용 보안값을 가지고 있어서, 별도 환경변수 없이도 실행할 수 있습니다.
 
 ```bash
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
@@ -50,10 +52,51 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 SERVER_PORT=18080 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
-`local` 프로필은 개발 편의를 위해 로컬 전용 기본 보안값을 제공합니다.
+### 방법 2. `.env` 파일로 실행
 
+환경변수를 매번 입력하지 않으려면 예시 파일을 복사해 `.env`를 만듭니다.
+
+```bash
+cp .env.example .env
+```
+
+필요하면 `.env` 값을 수정합니다.
+
+```bash
+vi .env
+```
+
+현재 터미널에 `.env` 값을 로드합니다.
+
+```bash
+set -a
+source .env
+set +a
+```
+
+그 다음 애플리케이션을 실행합니다.
+
+```bash
+./gradlew bootRun
+```
+
+`.env` 파일은 `.gitignore`에 포함되어 있으므로 커밋되지 않습니다.
+공유용 예시는 `.env.example`만 관리합니다.
+
+### 주요 환경변수
+
+로컬 실행에서 주로 쓰는 환경변수는 다음과 같습니다.
+
+- `SPRING_PROFILES_ACTIVE`: 로컬 실행 시 `local`
+- `SERVER_PORT`: 애플리케이션 포트
+- `DATABASE_URL`: PostgreSQL 접속 URL
+- `DATABASE_USERNAME`: PostgreSQL 사용자명
+- `DATABASE_PASSWORD`: PostgreSQL 비밀번호
 - `ADMIN_API_TOKEN`: 로컬 관리자 API 토큰
 - `SLACK_SIGNING_SECRET`: 로컬 Slack 서명 검증 시크릿
+
+`local` 프로필은 개발 편의를 위해 로컬 전용 기본 보안값을 제공합니다.
+그래도 실제 Slack 앱을 연결할 때는 `.env`의 `SLACK_SIGNING_SECRET` 값을 Slack 앱 관리 화면의 Signing Secret 값으로 바꾸는 것을 권장합니다.
 
 ## 비로컬 실행
 

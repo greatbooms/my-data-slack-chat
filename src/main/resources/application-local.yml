@@ -4,8 +4,8 @@ spring:
       on-profile: local
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/my_data}
-    username: my_data
-    password: my_data
+    username: ${DATABASE_USERNAME:my_data}
+    password: ${DATABASE_PASSWORD:my_data}
 logging:
   level:
     com.mydata: DEBUG
