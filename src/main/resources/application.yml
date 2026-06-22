@@ -15,6 +15,9 @@ spring:
           time_zone: UTC
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.sql
+  graphql:
+    http:
+      path: /admin/graphql
 
 server:
   port: ${SERVER_PORT:50506}

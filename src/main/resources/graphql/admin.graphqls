@@ -1,0 +1,22 @@
+type Query {
+  viewer: AdminViewer!
+  dashboardSummary: AdminDashboardSummary!
+}
+
+type AdminViewer {
+  id: ID!
+  email: String!
+  displayName: String!
+  role: UserRole!
+}
+
+type AdminDashboardSummary {
+  userCount: Int!
+  dataSourceCount: Int!
+  runningJobCount: Int!
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
