@@ -1,4 +1,4 @@
-query AdminShell {
+query ViewerAndDashboard {
   viewer {
     id
     email

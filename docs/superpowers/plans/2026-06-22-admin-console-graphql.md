@@ -509,15 +509,16 @@ git commit -m "feat: add admin ui build pipeline"
 **Files:**
 - Create: `frontend/admin/src/main.tsx`
 - Create: `frontend/admin/src/App.tsx`
-- Create: `frontend/admin/src/api/graphqlClient.ts`
+- Create: `frontend/admin/src/api/adminGraphql.ts`
 - Create: `frontend/admin/src/api/csrf.ts`
+- Create: `frontend/admin/src/api/auth.ts`
 - Create: `frontend/admin/src/routes/LoginPage.tsx`
 - Create: `frontend/admin/src/routes/AdminLayout.tsx`
 - Create: `frontend/admin/src/routes/DashboardPage.tsx`
-- Create: `frontend/admin/src/styles.css`
+- Create: `frontend/admin/src/App.css`
 - Modify: `frontend/admin/src/graphql/admin.graphql`
 
-- [ ] **Step 1: Write typed operations**
+- [x] **Step 1: Write typed operations**
 
 Add operations:
 
@@ -528,7 +529,7 @@ query ViewerAndDashboard {
 }
 ```
 
-- [ ] **Step 2: Run codegen**
+- [x] **Step 2: Run codegen**
 
 ```bash
 cd frontend/admin
@@ -537,11 +538,11 @@ npm run codegen
 
 Expected: PASS and generated types include `ViewerAndDashboardQuery`.
 
-- [ ] **Step 3: Implement login, layout, dashboard**
+- [x] **Step 3: Implement login, layout, dashboard**
 
 Login posts to `/admin/auth/login`, layout renders sidebar routes, dashboard uses generated GraphQL operation through `graphql-request` and TanStack Query.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 ```bash
 cd frontend/admin
