@@ -1,6 +1,7 @@
 .worktrees
 .worktrees/
 .serena/
+.superpowers/
 bin/
 .gradle/
 build/
