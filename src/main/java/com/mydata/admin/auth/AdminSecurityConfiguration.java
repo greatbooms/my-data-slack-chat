@@ -25,7 +25,6 @@ public class AdminSecurityConfiguration {
         SecurityContextRepository securityContextRepository
     ) throws Exception {
         http.securityContext(securityContext -> securityContext.securityContextRepository(securityContextRepository));
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/admin/auth/login", "/admin/graphql"));
         http.formLogin(AbstractHttpConfigurer::disable);
         http.httpBasic(AbstractHttpConfigurer::disable);
         http.exceptionHandling(exceptionHandling -> exceptionHandling.authenticationEntryPoint(
