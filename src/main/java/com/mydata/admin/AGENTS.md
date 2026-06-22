@@ -8,6 +8,7 @@
 - `auth/AdminAuthController`: 로그인, 로그아웃, CSRF 토큰 API
 - `auth/AdminBootstrapInitializer`: 초기 관리자 계정 생성
 - `graphql/AdminGraphQlController`: 관리자 GraphQL query/mutation 진입점
+- `ui/AdminUiWebConfiguration`: 관리자 React 앱 정적 서빙과 SPA fallback
 - `users/AdminUserService`: 관리자 사용자 관리 로직
 - `datasources/AdminDataSourceService`: 관리자 데이터소스 관리와 수동 수집 요청 로직
 

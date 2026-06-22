@@ -10,3 +10,5 @@ out/
 .idea/
 .DS_Store
 .env
+frontend/admin/node_modules/
+frontend/admin/dist/

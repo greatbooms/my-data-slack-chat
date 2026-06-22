@@ -134,7 +134,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main/resources/db/changelog/db.changelog-master.sql src/main/java/com/mydata/users src/main/java/com/mydata/datasources src/test/java/com/mydata/admin/AdminSchemaMigrationTest.java src/test/java/com/mydata/database/LiquibaseMigrationTest.java
@@ -436,10 +436,12 @@ git commit -m "feat: add admin data source graphql operations"
 - Create: `frontend/admin/codegen.ts`
 - Create: `frontend/admin/src/generated/.gitkeep`
 - Create: `frontend/admin/src/graphql/admin.graphql`
+- Create: `src/test/java/com/mydata/admin/ui/AdminUiWebConfigurationTest.java`
+- Create: `src/test/resources/static/admin-ui/*`
 - Modify: `build.gradle`
 - Create: `src/main/java/com/mydata/admin/ui/AdminUiWebConfiguration.java`
 
-- [ ] **Step 1: Create failing frontend build expectation**
+- [x] **Step 1: Create failing frontend build expectation**
 
 Add Gradle tasks `adminUiNpmInstall`, `adminUiBuild`, `processResources.dependsOn(adminUiBuild)` and run:
 
@@ -449,7 +451,7 @@ Add Gradle tasks `adminUiNpmInstall`, `adminUiBuild`, `processResources.dependsO
 
 Expected: FAIL before the frontend files exist.
 
-- [ ] **Step 2: Scaffold Vite app and Codegen**
+- [x] **Step 2: Scaffold Vite app and Codegen**
 
 Use dependencies:
 
@@ -473,17 +475,17 @@ Codegen source:
 schema: '../../src/main/resources/graphql/admin.graphqls',
 documents: 'src/graphql/**/*.graphql',
 generates: {
-  './src/generated/graphql.ts': {
+  './src/generated/': {
     preset: 'client'
   }
 }
 ```
 
-- [ ] **Step 3: Add SPA fallback**
+- [x] **Step 3: Add SPA fallback**
 
 Map `/admin-ui`, `/admin-ui/`, and `/admin-ui/**` to static `admin-ui/index.html` while leaving `/admin/graphql` and `/admin/auth/**` untouched.
 
-- [ ] **Step 4: Run frontend and backend build checks**
+- [x] **Step 4: Run frontend and backend build checks**
 
 ```bash
 cd frontend/admin

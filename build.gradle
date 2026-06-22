@@ -53,3 +53,46 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+def adminUiDirectory = layout.projectDirectory.dir('frontend/admin')
+def adminUiDistDirectory = adminUiDirectory.dir('dist')
+def adminUiStaticDirectory = layout.buildDirectory.dir('resources/main/static/admin-ui')
+
+tasks.register('adminUiNpmInstall', Exec) {
+    description = '관리자 React 앱 npm 의존성을 설치합니다.'
+    group = 'build'
+    workingDir = adminUiDirectory.asFile
+    commandLine 'npm', 'ci'
+    inputs.file(adminUiDirectory.file('package.json'))
+    inputs.file(adminUiDirectory.file('package-lock.json'))
+    outputs.dir(adminUiDirectory.dir('node_modules'))
+}
+
+tasks.register('adminUiNpmBuild', Exec) {
+    description = '관리자 React 앱을 빌드합니다.'
+    group = 'build'
+    dependsOn 'adminUiNpmInstall'
+    workingDir = adminUiDirectory.asFile
+    commandLine 'npm', 'run', 'build'
+    inputs.dir(adminUiDirectory.dir('src'))
+    inputs.file(adminUiDirectory.file('index.html'))
+    inputs.file(adminUiDirectory.file('package.json'))
+    inputs.file(adminUiDirectory.file('package-lock.json'))
+    inputs.file(adminUiDirectory.file('tsconfig.json'))
+    inputs.file(adminUiDirectory.file('vite.config.ts'))
+    inputs.file(adminUiDirectory.file('codegen.ts'))
+    inputs.file(layout.projectDirectory.file('src/main/resources/graphql/admin.graphqls'))
+    outputs.dir(adminUiDistDirectory)
+}
+
+tasks.register('adminUiBuild', Copy) {
+    description = '관리자 React 앱 빌드 산출물을 Spring Boot 정적 리소스로 복사합니다.'
+    group = 'build'
+    dependsOn 'adminUiNpmBuild'
+    from adminUiDistDirectory
+    into adminUiStaticDirectory
+}
+
+tasks.named('processResources') {
+    dependsOn 'adminUiBuild'
+}

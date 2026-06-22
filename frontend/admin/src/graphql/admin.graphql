@@ -1,0 +1,45 @@
+query AdminShell {
+  viewer {
+    id
+    email
+    displayName
+    role
+  }
+  dashboardSummary {
+    userCount
+    dataSourceCount
+    runningJobCount
+  }
+}
+
+query AdminDataSources {
+  dataSources {
+    totalCount
+    items {
+      id
+      workspaceId
+      ownerUserId
+      type
+      name
+      status
+      syncMode
+      visibility
+      lastSyncedAt
+      deletedAt
+    }
+  }
+}
+
+query AdminUsers {
+  users {
+    totalCount
+    items {
+      id
+      email
+      displayName
+      role
+      status
+      deletedAt
+    }
+  }
+}
