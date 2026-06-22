@@ -14,8 +14,10 @@ import org.hibernate.annotations.ColumnTransformer;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
@@ -29,6 +31,9 @@ public class DataSourceEntity extends BaseEntity {
 
     @Column(name = "workspace_id", nullable = false)
     private UUID workspaceId;
+
+    @Column(name = "owner_user_id")
+    private UUID ownerUserId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "text")
@@ -44,6 +49,13 @@ public class DataSourceEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "sync_mode", nullable = false, columnDefinition = "text")
     private SyncMode syncMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "text")
+    private DataSourceVisibility visibility = DataSourceVisibility.PRIVATE;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "sync_cursor_json", nullable = false, columnDefinition = "jsonb")
@@ -66,9 +78,22 @@ public class DataSourceEntity extends BaseEntity {
         dataSource.name = name;
         dataSource.status = status;
         dataSource.syncMode = syncMode;
+        dataSource.visibility = DataSourceVisibility.PRIVATE;
         dataSource.syncCursorJson = JsonMaps.EMPTY_OBJECT;
         dataSource.configJson = JsonMaps.EMPTY_OBJECT;
         return dataSource;
+    }
+
+    public void assignOwner(UUID ownerUserId) {
+        this.ownerUserId = ownerUserId;
+    }
+
+    public void changeVisibility(DataSourceVisibility visibility) {
+        this.visibility = Objects.requireNonNull(visibility, "visibility must not be null");
+    }
+
+    public void markDeleted() {
+        deletedAt = OffsetDateTime.now();
     }
 
     public void putConfig(String key, String value) {

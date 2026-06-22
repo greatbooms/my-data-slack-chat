@@ -185,3 +185,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_unique_external_thread
         COALESCE(external_channel_id, ''),
         COALESCE(external_thread_id, '')
     );
+
+--changeset eric:003-admin-console-schema
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'USER';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id);
+ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'PRIVATE';
+ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

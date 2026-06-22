@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface DataSourceRepository extends JpaRepository<DataSourceEntity, UUID> {
     List<DataSourceEntity> findByWorkspaceId(UUID workspaceId);
+
+    List<DataSourceEntity> findByDeletedAtIsNullOrderByCreatedAtDesc();
 }
