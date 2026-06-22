@@ -567,9 +567,9 @@ git commit -m "feat: add admin ui shell"
 - Create: `frontend/admin/src/routes/DataSourcesPage.tsx`
 - Create: `frontend/admin/src/routes/DataSourceFormDialog.tsx`
 - Modify: `frontend/admin/src/App.tsx`
-- Modify: `frontend/admin/src/styles.css`
+- Modify: `frontend/admin/src/App.css`
 
-- [ ] **Step 1: Add operations and generate types**
+- [x] **Step 1: Add operations and generate types**
 
 Operations must cover users list/create/update/disable/delete/restore/password reset and data source list/create/update/delete/sync/job history.
 
@@ -580,11 +580,11 @@ npm run codegen
 
 Expected: PASS.
 
-- [ ] **Step 2: Implement pages**
+- [x] **Step 2: Implement pages**
 
 Use compact tables, status badges, icon buttons with labels/tooltips, confirmation dialogs for destructive actions, and disabled loading states for mutation buttons.
 
-- [ ] **Step 3: Run frontend build**
+- [x] **Step 3: Run frontend build**
 
 ```bash
 cd frontend/admin

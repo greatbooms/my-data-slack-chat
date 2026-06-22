@@ -140,6 +140,128 @@ describe('관리자 앱 인증 흐름', () => {
     expect(screen.getByLabelText('관리 대상 유저').textContent).toContain('8');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it('유저 화면에서 목록을 보고 유저를 비활성화한다', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminUsersResponse([
+        {
+          id: 'user-id',
+          email: 'owner@example.com',
+          displayName: '데이터 오너',
+          role: 'USER',
+          status: 'ACTIVE',
+          deletedAt: null
+        }
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('disableUser', {
+        id: 'user-id',
+        email: 'owner@example.com',
+        displayName: '데이터 오너',
+        role: 'USER',
+        status: 'DISABLED',
+        deletedAt: null
+      }))
+      .mockResolvedValueOnce(adminUsersResponse([
+        {
+          id: 'user-id',
+          email: 'owner@example.com',
+          displayName: '데이터 오너',
+          role: 'USER',
+          status: 'DISABLED',
+          deletedAt: null
+        }
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/users');
+
+    expect(await screen.findByText('owner@example.com')).toBeVisible();
+    expect(screen.getByText('데이터 오너')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'owner@example.com 비활성화' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('DISABLED')).toBeVisible();
+    });
+    expect(confirmSpy).toHaveBeenCalledWith('이 유저를 비활성화할까요?');
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).query).toContain('DisableUser');
+  });
+
+  it('유저 목록 조회가 실패하면 빈 목록 문구를 함께 보여주지 않는다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(jsonResponse({ errors: [{ message: 'fail' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/users');
+
+    expect(await screen.findByText('유저를 불러오지 못했습니다.')).toBeVisible();
+    expect(screen.queryByText('유저가 없습니다.')).not.toBeInTheDocument();
+  });
+
+  it('데이터소스 화면에서 목록, 수동 수집, 수집 기록을 관리한다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('requestDataSourceSync', {
+        id: 'job-id',
+        workspaceId: 'workspace-id',
+        dataSourceId: 'source-id',
+        triggerType: 'MANUAL',
+        status: 'PENDING',
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: '2026-06-22T00:00:00Z'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함', lastSyncedAt: '2026-06-22T00:00:00Z' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobs', [
+        {
+          id: 'job-id',
+          workspaceId: 'workspace-id',
+          dataSourceId: 'source-id',
+          triggerType: 'MANUAL',
+          status: 'PENDING',
+          errorMessage: null,
+          startedAt: null,
+          finishedAt: null,
+          createdAt: '2026-06-22T00:00:00Z'
+        }
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('Notion 문서함')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Notion 문서함 수동 수집' }));
+
+    await waitFor(() => {
+      expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).query).toContain('RequestDataSourceSync');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Notion 문서함 수집 기록' }));
+
+    expect(await screen.findByText('PENDING')).toBeVisible();
+    expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query).toContain('AdminIngestionJobs');
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -168,4 +290,42 @@ function dashboardResponse(summary: {
       dashboardSummary: summary
     }
   });
+}
+
+function adminUsersResponse(items: Array<Record<string, unknown>>) {
+  return graphqlResponse('users', {
+    totalCount: items.length,
+    items
+  });
+}
+
+function adminDataSourcesResponse(items: Array<Record<string, unknown>>) {
+  return graphqlResponse('dataSources', {
+    totalCount: items.length,
+    items
+  });
+}
+
+function graphqlResponse(field: string, value: unknown) {
+  return jsonResponse({
+    data: {
+      [field]: value
+    }
+  });
+}
+
+function dataSourceFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'source-id',
+    workspaceId: 'workspace-id',
+    ownerUserId: 'user-id',
+    type: 'NOTION',
+    name: 'Notion 문서함',
+    status: 'ACTIVE',
+    syncMode: 'MANUAL',
+    visibility: 'PRIVATE',
+    lastSyncedAt: null,
+    deletedAt: null,
+    ...overrides
+  };
 }

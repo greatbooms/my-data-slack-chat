@@ -16,16 +16,7 @@ query AdminDataSources {
   dataSources {
     totalCount
     items {
-      id
-      workspaceId
-      ownerUserId
-      type
-      name
-      status
-      syncMode
-      visibility
-      lastSyncedAt
-      deletedAt
+      ...DataSourceFields
     }
   }
 }
@@ -34,12 +25,107 @@ query AdminUsers {
   users {
     totalCount
     items {
-      id
-      email
-      displayName
-      role
-      status
-      deletedAt
+      ...UserFields
     }
   }
+}
+
+query AdminIngestionJobs($dataSourceId: ID!, $first: Int = 20) {
+  ingestionJobs(dataSourceId: $dataSourceId, first: $first) {
+    ...IngestionJobFields
+  }
+}
+
+mutation CreateUser($input: CreateUserInput!) {
+  createUser(input: $input) {
+    ...UserFields
+  }
+}
+
+mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
+  updateUser(id: $id, input: $input) {
+    ...UserFields
+  }
+}
+
+mutation DisableUser($id: ID!) {
+  disableUser(id: $id) {
+    ...UserFields
+  }
+}
+
+mutation SoftDeleteUser($id: ID!) {
+  softDeleteUser(id: $id) {
+    ...UserFields
+  }
+}
+
+mutation RestoreUser($id: ID!) {
+  restoreUser(id: $id) {
+    ...UserFields
+  }
+}
+
+mutation ResetUserPassword($id: ID!, $input: ResetUserPasswordInput!) {
+  resetUserPassword(id: $id, input: $input) {
+    ...UserFields
+  }
+}
+
+mutation CreateDataSource($input: CreateDataSourceInput!) {
+  createDataSource(input: $input) {
+    ...DataSourceFields
+  }
+}
+
+mutation UpdateDataSource($id: ID!, $input: UpdateDataSourceInput!) {
+  updateDataSource(id: $id, input: $input) {
+    ...DataSourceFields
+  }
+}
+
+mutation SoftDeleteDataSource($id: ID!) {
+  softDeleteDataSource(id: $id) {
+    ...DataSourceFields
+  }
+}
+
+mutation RequestDataSourceSync($id: ID!) {
+  requestDataSourceSync(id: $id) {
+    ...IngestionJobFields
+  }
+}
+
+fragment UserFields on User {
+  id
+  email
+  displayName
+  role
+  status
+  deletedAt
+}
+
+fragment DataSourceFields on DataSource {
+  id
+  workspaceId
+  ownerUserId
+  type
+  name
+  status
+  syncMode
+  visibility
+  lastSyncedAt
+  deletedAt
+}
+
+fragment IngestionJobFields on IngestionJob {
+  id
+  workspaceId
+  dataSourceId
+  triggerType
+  status
+  errorMessage
+  startedAt
+  finishedAt
+  createdAt
 }
