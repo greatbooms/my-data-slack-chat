@@ -57,6 +57,9 @@ public class DataSourceEntity extends BaseEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt = OffsetDateTime.now();
+
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "sync_cursor_json", nullable = false, columnDefinition = "jsonb")
     private String syncCursorJson = JsonMaps.EMPTY_OBJECT;
@@ -79,21 +82,30 @@ public class DataSourceEntity extends BaseEntity {
         dataSource.status = status;
         dataSource.syncMode = syncMode;
         dataSource.visibility = DataSourceVisibility.PRIVATE;
+        dataSource.updatedAt = OffsetDateTime.now();
         dataSource.syncCursorJson = JsonMaps.EMPTY_OBJECT;
         dataSource.configJson = JsonMaps.EMPTY_OBJECT;
         return dataSource;
     }
 
     public void assignOwner(UUID ownerUserId) {
-        this.ownerUserId = ownerUserId;
+        this.ownerUserId = Objects.requireNonNull(ownerUserId, "ownerUserId must not be null");
+        touch();
     }
 
     public void changeVisibility(DataSourceVisibility visibility) {
         this.visibility = Objects.requireNonNull(visibility, "visibility must not be null");
+        touch();
     }
 
     public void markDeleted() {
         deletedAt = OffsetDateTime.now();
+        touch();
+    }
+
+    public void restore() {
+        deletedAt = null;
+        touch();
     }
 
     public void putConfig(String key, String value) {
@@ -101,6 +113,7 @@ public class DataSourceEntity extends BaseEntity {
             Map<String, Object> config = readConfig();
             config.put(key, value);
             configJson = OBJECT_MAPPER.writeValueAsString(config);
+            touch();
         } catch (Exception exception) {
             throw new IllegalStateException("데이터소스 설정을 갱신하지 못했습니다", exception);
         }
@@ -121,5 +134,9 @@ public class DataSourceEntity extends BaseEntity {
         }
 
         return OBJECT_MAPPER.readValue(configJson, CONFIG_MAP_TYPE);
+    }
+
+    private void touch() {
+        updatedAt = OffsetDateTime.now();
     }
 }

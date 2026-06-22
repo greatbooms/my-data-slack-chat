@@ -76,6 +76,12 @@ public class UserEntity extends BaseEntity {
         touch();
     }
 
+    public void restore() {
+        this.deletedAt = null;
+        this.status = UserStatus.ACTIVE;
+        touch();
+    }
+
     private void touch() {
         updatedAt = OffsetDateTime.now();
     }
