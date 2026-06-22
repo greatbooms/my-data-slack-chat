@@ -8,23 +8,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SecuritySecretValidatorTest {
     @Test
-    void rejectsBlankAdminToken() {
-        SecuritySecretValidator validator = new SecuritySecretValidator(
-            new MockEnvironment(),
-            " ",
-            "slack-secret"
-        );
-
-        assertThatThrownBy(validator::validate)
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("my-data.admin-token 값");
-    }
-
-    @Test
     void rejectsBlankSlackSigningSecret() {
         SecuritySecretValidator validator = new SecuritySecretValidator(
             new MockEnvironment(),
-            "admin-secret",
             "\t"
         );
 
@@ -37,7 +23,6 @@ class SecuritySecretValidatorTest {
     void rejectsLocalDefaultsOutsideLocalAndTestProfiles() {
         SecuritySecretValidator validator = new SecuritySecretValidator(
             new MockEnvironment(),
-            "local-admin-token",
             "local-signing-secret"
         );
 
@@ -52,7 +37,6 @@ class SecuritySecretValidatorTest {
         environment.setActiveProfiles("local");
         SecuritySecretValidator validator = new SecuritySecretValidator(
             environment,
-            "local-admin-token",
             "local-signing-secret"
         );
 

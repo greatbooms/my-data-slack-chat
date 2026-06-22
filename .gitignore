@@ -1,6 +1,7 @@
 .worktrees
 .worktrees/
 .serena/
+.superpowers/
 bin/
 .gradle/
 build/
@@ -9,3 +10,5 @@ out/
 .idea/
 .DS_Store
 .env
+frontend/admin/node_modules/
+frontend/admin/dist/

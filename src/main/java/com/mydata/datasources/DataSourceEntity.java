@@ -14,8 +14,10 @@ import org.hibernate.annotations.ColumnTransformer;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
@@ -29,6 +31,9 @@ public class DataSourceEntity extends BaseEntity {
 
     @Column(name = "workspace_id", nullable = false)
     private UUID workspaceId;
+
+    @Column(name = "owner_user_id")
+    private UUID ownerUserId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "text")
@@ -44,6 +49,19 @@ public class DataSourceEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "sync_mode", nullable = false, columnDefinition = "text")
     private SyncMode syncMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "text")
+    private DataSourceVisibility visibility = DataSourceVisibility.PRIVATE;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
+
+    @Column(name = "last_synced_at")
+    private OffsetDateTime lastSyncedAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt = OffsetDateTime.now();
 
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "sync_cursor_json", nullable = false, columnDefinition = "jsonb")
@@ -66,9 +84,49 @@ public class DataSourceEntity extends BaseEntity {
         dataSource.name = name;
         dataSource.status = status;
         dataSource.syncMode = syncMode;
+        dataSource.visibility = DataSourceVisibility.PRIVATE;
+        dataSource.updatedAt = OffsetDateTime.now();
         dataSource.syncCursorJson = JsonMaps.EMPTY_OBJECT;
         dataSource.configJson = JsonMaps.EMPTY_OBJECT;
         return dataSource;
+    }
+
+    public void assignOwner(UUID ownerUserId) {
+        this.ownerUserId = Objects.requireNonNull(ownerUserId, "ownerUserId must not be null");
+        touch();
+    }
+
+    public void rename(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("데이터소스 이름은 비어 있을 수 없습니다");
+        }
+        this.name = name.trim();
+        touch();
+    }
+
+    public void changeStatus(DataSourceStatus status) {
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        touch();
+    }
+
+    public void changeSyncMode(SyncMode syncMode) {
+        this.syncMode = Objects.requireNonNull(syncMode, "syncMode must not be null");
+        touch();
+    }
+
+    public void changeVisibility(DataSourceVisibility visibility) {
+        this.visibility = Objects.requireNonNull(visibility, "visibility must not be null");
+        touch();
+    }
+
+    public void markDeleted() {
+        deletedAt = OffsetDateTime.now();
+        touch();
+    }
+
+    public void restore() {
+        deletedAt = null;
+        touch();
     }
 
     public void putConfig(String key, String value) {
@@ -76,6 +134,7 @@ public class DataSourceEntity extends BaseEntity {
             Map<String, Object> config = readConfig();
             config.put(key, value);
             configJson = OBJECT_MAPPER.writeValueAsString(config);
+            touch();
         } catch (Exception exception) {
             throw new IllegalStateException("데이터소스 설정을 갱신하지 못했습니다", exception);
         }
@@ -96,5 +155,9 @@ public class DataSourceEntity extends BaseEntity {
         }
 
         return OBJECT_MAPPER.readValue(configJson, CONFIG_MAP_TYPE);
+    }
+
+    private void touch() {
+        updatedAt = OffsetDateTime.now();
     }
 }

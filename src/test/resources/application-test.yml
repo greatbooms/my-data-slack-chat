@@ -6,7 +6,6 @@ spring:
     hibernate:
       ddl-auto: validate
 my-data:
-  admin-token: test-admin-token
   slack:
     signing-secret: test-signing-secret
   embedding:

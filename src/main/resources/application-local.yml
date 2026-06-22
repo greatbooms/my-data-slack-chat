@@ -10,6 +10,5 @@ logging:
   level:
     com.mydata: DEBUG
 my-data:
-  admin-token: ${ADMIN_API_TOKEN:local-admin-token}
   slack:
     signing-secret: ${SLACK_SIGNING_SECRET:local-signing-secret}

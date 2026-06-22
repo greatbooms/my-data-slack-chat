@@ -4,10 +4,10 @@
 
 ## 핵심 파일
 
-- `SecuritySecretValidator`: admin token과 Slack signing secret 검증
+- `SecuritySecretValidator`: Slack signing secret 검증
 
 ## 주의사항
 
 - `local` 또는 `test` 프로필 밖에서는 로컬 기본 보안값을 허용하지 않습니다.
 - blank secret은 어떤 프로필에서도 허용하지 않습니다.
-- 새 보안 secret을 추가하면 `.env.example`과 README 환경변수 표도 갱신합니다.
+- 초기 관리자 bootstrap 값처럼 새 보안 설정을 추가하면 `.env.example`과 README 환경변수 표도 갱신합니다.

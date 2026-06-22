@@ -15,12 +15,19 @@ spring:
           time_zone: UTC
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.sql
+  graphql:
+    http:
+      path: /admin/graphql
 
 server:
   port: ${SERVER_PORT:50506}
 
 my-data:
-  admin-token: ${ADMIN_API_TOKEN}
+  admin:
+    bootstrap:
+      email: ${ADMIN_BOOTSTRAP_EMAIL:}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+      display-name: ${ADMIN_BOOTSTRAP_DISPLAY_NAME:관리자}
   slack:
     signing-secret: ${SLACK_SIGNING_SECRET}
   embedding:
