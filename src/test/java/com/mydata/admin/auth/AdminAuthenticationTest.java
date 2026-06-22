@@ -5,15 +5,19 @@ import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
 import com.mydata.users.UserRole;
 import com.mydata.users.UserStatus;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -45,6 +49,25 @@ class AdminAuthenticationTest extends PostgresIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"admin@example.com\",\"password\":\"secret1234\"}"))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void changesSessionIdAfterSuccessfulLogin() throws Exception {
+        createUser("session-admin@example.com", UserRole.ADMIN, UserStatus.ACTIVE, false);
+        MockHttpSession existingSession = new MockHttpSession();
+        String originalSessionId = existingSession.getId();
+
+        MvcResult result = mockMvc.perform(post("/admin/auth/login")
+                .session(existingSession)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"session-admin@example.com\",\"password\":\"secret1234\"}"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        HttpSession authenticatedSession = result.getRequest().getSession(false);
+        assertThat(authenticatedSession).isNotNull();
+        assertThat(authenticatedSession.getId()).isNotEqualTo(originalSessionId);
     }
 
     @Test

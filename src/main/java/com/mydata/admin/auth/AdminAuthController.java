@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,13 +33,16 @@ import java.util.UUID;
 public class AdminAuthController {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
 
     public AdminAuthController(
         AuthenticationManager authenticationManager,
-        SecurityContextRepository securityContextRepository
+        SecurityContextRepository securityContextRepository,
+        SessionAuthenticationStrategy sessionAuthenticationStrategy
     ) {
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
+        this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
     }
 
     @GetMapping("/csrf")
@@ -55,6 +59,7 @@ public class AdminAuthController {
         Authentication authentication = authenticationManager.authenticate(
             UsernamePasswordAuthenticationToken.unauthenticated(request.email(), request.password())
         );
+        sessionAuthenticationStrategy.onAuthentication(authentication, httpRequest, httpResponse);
 
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
         securityContext.setAuthentication(authentication);
