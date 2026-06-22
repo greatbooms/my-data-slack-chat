@@ -28,6 +28,9 @@ import org.springframework.web.context.WebApplicationContext;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -43,7 +46,9 @@ class AdminDataSourceControllerTest extends PostgresIntegrationTest {
 
     @BeforeEach
     void setUpMockMvc() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+            .apply(springSecurity())
+            .build();
     }
 
     @Test
@@ -59,7 +64,8 @@ class AdminDataSourceControllerTest extends PostgresIntegrationTest {
         ));
 
         MvcResult result = mockMvc.perform(post("/admin/data-sources/{id}/sync", dataSource.getId())
-                .header("X-Admin-Token", "test-admin-token")
+                .with(user("admin@example.com").roles("ADMIN"))
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     { "requestedByUserId": "%s" }
@@ -80,19 +86,21 @@ class AdminDataSourceControllerTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void rejectsMalformedBodyWithInvalidAdminTokenBeforeParsingBody() throws Exception {
+    void rejectsMalformedBodyWithoutAdminSessionBeforeParsingBody() throws Exception {
         mockMvc.perform(post("/admin/data-sources/{id}/sync", UUID.randomUUID())
-                .header("X-Admin-Token", "wrong-token")
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{"))
             .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void rejectsMalformedBodyWithMissingAdminTokenBeforeParsingBody() throws Exception {
+    void rejectsMalformedBodyForNonAdminUserBeforeParsingBody() throws Exception {
         mockMvc.perform(post("/admin/data-sources/{id}/sync", UUID.randomUUID())
+                .with(user("user@example.com").roles("USER"))
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{"))
-            .andExpect(status().isUnauthorized());
+            .andExpect(status().isForbidden());
     }
 }

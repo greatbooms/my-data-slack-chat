@@ -91,7 +91,8 @@ set +a
 
 ### 구동에 필요한 환경변수
 
-로컬 Docker DB를 그대로 쓰는 경우 최소 환경변수는 `SPRING_PROFILES_ACTIVE=local`입니다.
+이미 관리자 계정이 있는 로컬 Docker DB를 그대로 쓰는 경우 최소 환경변수는 `SPRING_PROFILES_ACTIVE=local`입니다.
+새 DB에서는 `.env.example`처럼 초기 관리자 계정 환경변수도 함께 지정합니다.
 
 ```bash
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
@@ -106,7 +107,9 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 | `DATABASE_URL` | 선택 | 권장 | local: `jdbc:postgresql://localhost:5433/my_data`, 그 외: `jdbc:postgresql://localhost:5432/my_data` | PostgreSQL 접속 URL입니다. |
 | `DATABASE_USERNAME` | 선택 | 권장 | `my_data` | PostgreSQL 사용자명입니다. |
 | `DATABASE_PASSWORD` | 선택 | 권장 | `my_data` | PostgreSQL 비밀번호입니다. |
-| `ADMIN_API_TOKEN` | 선택 | 필수 | local: `local-admin-token` | 관리자 API 호출 시 `X-Admin-Token` 헤더로 보낼 토큰입니다. |
+| `ADMIN_BOOTSTRAP_EMAIL` | 권장 | 조건부 필수 | 없음 | 삭제되지 않은 관리자 계정이 없을 때 생성할 초기 관리자 이메일입니다. |
+| `ADMIN_BOOTSTRAP_PASSWORD` | 권장 | 조건부 필수 | 없음 | 삭제되지 않은 관리자 계정이 없을 때 생성할 초기 관리자 비밀번호입니다. |
+| `ADMIN_BOOTSTRAP_DISPLAY_NAME` | 선택 | 선택 | `관리자` | 초기 관리자 표시 이름입니다. |
 | `SLACK_SIGNING_SECRET` | 선택 | 필수 | local: `local-signing-secret` | Slack Events API 요청 서명 검증에 사용하는 시크릿입니다. |
 | `EMBEDDING_MODEL` | 선택 | 선택 | `deterministic-1536` | 임베딩 모델 이름입니다. 현재 로컬/테스트용 결정적 임베딩 클라이언트에서 사용합니다. |
 
@@ -116,10 +119,13 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ## 비로컬 실행
 
 `local` 또는 `test` 프로필이 아닌 환경에서는 보안값을 반드시 직접 지정해야 합니다.
-값이 없거나 비어 있거나 로컬 기본값이면 애플리케이션이 시작되지 않습니다.
+Slack 서명 시크릿 값이 없거나 비어 있거나 로컬 기본값이면 애플리케이션이 시작되지 않습니다.
+삭제되지 않은 관리자 계정이 아직 없다면 초기 관리자 이메일과 비밀번호도 함께 지정해야 합니다.
 
 ```bash
-ADMIN_API_TOKEN=원하는_관리자_토큰 \
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com \
+ADMIN_BOOTSTRAP_PASSWORD=초기_관리자_비밀번호 \
+ADMIN_BOOTSTRAP_DISPLAY_NAME=관리자 \
 SLACK_SIGNING_SECRET=Slack_앱_서명_시크릿 \
 DATABASE_URL=jdbc:postgresql://localhost:5433/my_data \
 DATABASE_USERNAME=my_data \

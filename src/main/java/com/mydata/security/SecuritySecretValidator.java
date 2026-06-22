@@ -8,31 +8,26 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SecuritySecretValidator {
-    private static final String LOCAL_ADMIN_TOKEN = "local-admin-token";
     private static final String LOCAL_SIGNING_SECRET = "local-signing-secret";
 
     private final Environment environment;
-    private final String adminToken;
     private final String slackSigningSecret;
 
     public SecuritySecretValidator(
         Environment environment,
-        @Value("${my-data.admin-token}") String adminToken,
         @Value("${my-data.slack.signing-secret}") String slackSigningSecret
     ) {
         this.environment = environment;
-        this.adminToken = adminToken;
         this.slackSigningSecret = slackSigningSecret;
     }
 
     @PostConstruct
     void validate() {
-        rejectBlank("my-data.admin-token", adminToken);
         rejectBlank("my-data.slack.signing-secret", slackSigningSecret);
         if (allowsLocalDefaults()) {
             return;
         }
-        if (LOCAL_ADMIN_TOKEN.equals(adminToken) || LOCAL_SIGNING_SECRET.equals(slackSigningSecret)) {
+        if (LOCAL_SIGNING_SECRET.equals(slackSigningSecret)) {
             throw new IllegalStateException("로컬 기본 보안값은 local 또는 test 프로필에서만 사용할 수 있습니다");
         }
     }
