@@ -1,6 +1,17 @@
 type Query {
   viewer: AdminViewer!
   dashboardSummary: AdminDashboardSummary!
+  users: UserPage!
+  user(id: ID!): User
+}
+
+type Mutation {
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  disableUser(id: ID!): User!
+  softDeleteUser(id: ID!): User!
+  restoreUser(id: ID!): User!
+  resetUserPassword(id: ID!, input: ResetUserPasswordInput!): User!
 }
 
 type AdminViewer {
@@ -19,4 +30,40 @@ type AdminDashboardSummary {
 enum UserRole {
   USER
   ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+type UserPage {
+  items: [User!]!
+  totalCount: Int!
+}
+
+type User {
+  id: ID!
+  email: String!
+  displayName: String!
+  role: UserRole!
+  status: UserStatus!
+  deletedAt: String
+}
+
+input CreateUserInput {
+  email: String!
+  displayName: String!
+  role: UserRole!
+  password: String!
+}
+
+input UpdateUserInput {
+  displayName: String
+  role: UserRole
+  status: UserStatus
+}
+
+input ResetUserPasswordInput {
+  password: String!
 }

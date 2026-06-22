@@ -1,11 +1,19 @@
 package com.mydata.admin.graphql;
 
 import com.mydata.admin.auth.AdminUserDetailsService;
+import com.mydata.admin.users.AdminUserInputs.CreateUserInput;
+import com.mydata.admin.users.AdminUserInputs.ResetUserPasswordInput;
+import com.mydata.admin.users.AdminUserInputs.UpdateUserInput;
+import com.mydata.admin.users.AdminUserPagePayload;
+import com.mydata.admin.users.AdminUserPayload;
+import com.mydata.admin.users.AdminUserService;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.ingestion.IngestionJobStatus;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
+import org.springframework.graphql.data.method.annotation.Argument;
+import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -18,15 +26,18 @@ public class AdminGraphQlController {
     private final UserRepository users;
     private final DataSourceRepository dataSources;
     private final IngestionJobRepository ingestionJobs;
+    private final AdminUserService adminUsers;
 
     public AdminGraphQlController(
         UserRepository users,
         DataSourceRepository dataSources,
-        IngestionJobRepository ingestionJobs
+        IngestionJobRepository ingestionJobs,
+        AdminUserService adminUsers
     ) {
         this.users = users;
         this.dataSources = dataSources;
         this.ingestionJobs = ingestionJobs;
+        this.adminUsers = adminUsers;
     }
 
     @QueryMapping
@@ -53,6 +64,57 @@ public class AdminGraphQlController {
             .count();
 
         return new AdminDashboardSummaryPayload(userCount, dataSourceCount, runningJobCount);
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPagePayload users() {
+        return adminUsers.listUsers();
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload user(@Argument String id) {
+        return adminUsers.findUser(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload createUser(@Argument CreateUserInput input) {
+        return adminUsers.createUser(input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload updateUser(@Argument String id, @Argument UpdateUserInput input) {
+        return adminUsers.updateUser(id, input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload disableUser(@Argument String id) {
+        return adminUsers.disableUser(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload softDeleteUser(@Argument String id) {
+        return adminUsers.softDeleteUser(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload restoreUser(@Argument String id) {
+        return adminUsers.restoreUser(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminUserPayload resetUserPassword(
+        @Argument String id,
+        @Argument ResetUserPasswordInput input
+    ) {
+        return adminUsers.resetUserPassword(id, input);
     }
 
     private UserEntity currentAdmin() {
