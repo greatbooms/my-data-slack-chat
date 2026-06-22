@@ -2,7 +2,9 @@ package com.mydata.ingestion;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity, UUID> {
+    List<IngestionJobEntity> findByDataSourceIdOrderByCreatedAtDesc(UUID dataSourceId);
 }

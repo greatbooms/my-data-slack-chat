@@ -1,6 +1,12 @@
 package com.mydata.admin.graphql;
 
 import com.mydata.admin.auth.AdminUserDetailsService;
+import com.mydata.admin.datasources.AdminDataSourceInputs.CreateDataSourceInput;
+import com.mydata.admin.datasources.AdminDataSourceInputs.UpdateDataSourceInput;
+import com.mydata.admin.datasources.AdminDataSourcePagePayload;
+import com.mydata.admin.datasources.AdminDataSourcePayload;
+import com.mydata.admin.datasources.AdminDataSourceService;
+import com.mydata.admin.datasources.AdminIngestionJobPayload;
 import com.mydata.admin.users.AdminUserInputs.CreateUserInput;
 import com.mydata.admin.users.AdminUserInputs.ResetUserPasswordInput;
 import com.mydata.admin.users.AdminUserInputs.UpdateUserInput;
@@ -21,23 +27,28 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Controller
 public class AdminGraphQlController {
     private final UserRepository users;
     private final DataSourceRepository dataSources;
     private final IngestionJobRepository ingestionJobs;
     private final AdminUserService adminUsers;
+    private final AdminDataSourceService adminDataSources;
 
     public AdminGraphQlController(
         UserRepository users,
         DataSourceRepository dataSources,
         IngestionJobRepository ingestionJobs,
-        AdminUserService adminUsers
+        AdminUserService adminUsers,
+        AdminDataSourceService adminDataSources
     ) {
         this.users = users;
         this.dataSources = dataSources;
         this.ingestionJobs = ingestionJobs;
         this.adminUsers = adminUsers;
+        this.adminDataSources = adminDataSources;
     }
 
     @QueryMapping
@@ -115,6 +126,54 @@ public class AdminGraphQlController {
         @Argument ResetUserPasswordInput input
     ) {
         return adminUsers.resetUserPassword(id, input);
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminDataSourcePagePayload dataSources() {
+        return adminDataSources.listDataSources();
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminDataSourcePayload dataSource(@Argument String id) {
+        return adminDataSources.findDataSource(id);
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<AdminIngestionJobPayload> ingestionJobs(
+        @Argument String dataSourceId,
+        @Argument Integer first
+    ) {
+        return adminDataSources.ingestionJobs(dataSourceId, first);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminDataSourcePayload createDataSource(@Argument CreateDataSourceInput input) {
+        return adminDataSources.createDataSource(input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminDataSourcePayload updateDataSource(
+        @Argument String id,
+        @Argument UpdateDataSourceInput input
+    ) {
+        return adminDataSources.updateDataSource(id, input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminDataSourcePayload softDeleteDataSource(@Argument String id) {
+        return adminDataSources.softDeleteDataSource(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminIngestionJobPayload requestDataSourceSync(@Argument String id) {
+        return adminDataSources.requestDataSourceSync(id, currentAdmin().getId());
     }
 
     private UserEntity currentAdmin() {

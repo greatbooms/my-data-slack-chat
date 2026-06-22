@@ -4,7 +4,7 @@
 
 ## 모듈 지도
 
-- `admin`: 관리자 API와 토큰 인증
+- `admin`: 관리자 GraphQL API와 세션 인증
 - `auth`: 권한 principal과 permission 값
 - `chat`: 질문 답변 orchestration, 메시지, 출처 저장
 - `common`: 공통 JPA/JSON 유틸리티

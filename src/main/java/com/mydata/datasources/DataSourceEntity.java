@@ -57,6 +57,9 @@ public class DataSourceEntity extends BaseEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    @Column(name = "last_synced_at")
+    private OffsetDateTime lastSyncedAt;
+
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 
@@ -90,6 +93,24 @@ public class DataSourceEntity extends BaseEntity {
 
     public void assignOwner(UUID ownerUserId) {
         this.ownerUserId = Objects.requireNonNull(ownerUserId, "ownerUserId must not be null");
+        touch();
+    }
+
+    public void rename(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("데이터소스 이름은 비어 있을 수 없습니다");
+        }
+        this.name = name.trim();
+        touch();
+    }
+
+    public void changeStatus(DataSourceStatus status) {
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        touch();
+    }
+
+    public void changeSyncMode(SyncMode syncMode) {
+        this.syncMode = Objects.requireNonNull(syncMode, "syncMode must not be null");
         touch();
     }
 

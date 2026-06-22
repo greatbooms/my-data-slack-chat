@@ -3,6 +3,9 @@ type Query {
   dashboardSummary: AdminDashboardSummary!
   users: UserPage!
   user(id: ID!): User
+  dataSources: DataSourcePage!
+  dataSource(id: ID!): DataSource
+  ingestionJobs(dataSourceId: ID!, first: Int = 20): [IngestionJob!]!
 }
 
 type Mutation {
@@ -12,6 +15,10 @@ type Mutation {
   softDeleteUser(id: ID!): User!
   restoreUser(id: ID!): User!
   resetUserPassword(id: ID!, input: ResetUserPasswordInput!): User!
+  createDataSource(input: CreateDataSourceInput!): DataSource!
+  updateDataSource(id: ID!, input: UpdateDataSourceInput!): DataSource!
+  softDeleteDataSource(id: ID!): DataSource!
+  requestDataSourceSync(id: ID!): IngestionJob!
 }
 
 type AdminViewer {
@@ -66,4 +73,87 @@ input UpdateUserInput {
 
 input ResetUserPasswordInput {
   password: String!
+}
+
+type DataSourcePage {
+  items: [DataSource!]!
+  totalCount: Int!
+}
+
+type DataSource {
+  id: ID!
+  workspaceId: ID!
+  ownerUserId: ID
+  type: DataSourceType!
+  name: String!
+  status: DataSourceStatus!
+  syncMode: SyncMode!
+  visibility: DataSourceVisibility!
+  lastSyncedAt: String
+  deletedAt: String
+}
+
+type IngestionJob {
+  id: ID!
+  workspaceId: ID!
+  dataSourceId: ID!
+  triggerType: IngestionTriggerType!
+  status: IngestionJobStatus!
+  errorMessage: String
+  startedAt: String
+  finishedAt: String
+  createdAt: String!
+}
+
+enum DataSourceType {
+  LOCAL_TEXT
+  GOOGLE_DRIVE
+  NOTION
+  SLACK
+}
+
+enum DataSourceStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum SyncMode {
+  MANUAL
+  SCHEDULED
+  MANUAL_AND_SCHEDULED
+}
+
+enum DataSourceVisibility {
+  PRIVATE
+  WORKSPACE
+}
+
+enum IngestionTriggerType {
+  MANUAL
+  SCHEDULED
+}
+
+enum IngestionJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+input CreateDataSourceInput {
+  workspaceId: ID!
+  ownerUserId: ID!
+  type: DataSourceType!
+  name: String!
+  visibility: DataSourceVisibility!
+  syncMode: SyncMode!
+}
+
+input UpdateDataSourceInput {
+  ownerUserId: ID
+  name: String
+  status: DataSourceStatus
+  visibility: DataSourceVisibility
+  syncMode: SyncMode
 }
