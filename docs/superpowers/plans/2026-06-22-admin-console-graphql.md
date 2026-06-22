@@ -608,7 +608,7 @@ git commit -m "feat: add admin management screens"
 - Modify: `src/main/java/com/mydata/admin/AGENTS.md`
 - Modify: `src/test/java/com/mydata/admin/AGENTS.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 README must include:
 
@@ -625,7 +625,7 @@ Also document:
 - GraphQL endpoint: `/admin/graphql`
 - old `ADMIN_API_TOKEN` is removed.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 ```bash
 ./gradlew test
@@ -638,7 +638,7 @@ cd ../..
 
 Expected: PASS.
 
-- [ ] **Step 3: Optional browser verification**
+- [x] **Step 3: Optional browser verification**
 
 Run:
 
@@ -649,7 +649,7 @@ SPRING_PROFILES_ACTIVE=local ADMIN_BOOTSTRAP_EMAIL=admin@example.com ADMIN_BOOTS
 
 Open `http://localhost:50506/admin-ui` and verify login, dashboard, users, data sources pages render.
 
-- [ ] **Step 4: Final commit**
+- [x] **Step 4: Final commit**
 
 ```bash
 git add README.md .env.example src/main/java/com/mydata/admin/AGENTS.md src/test/java/com/mydata/admin/AGENTS.md

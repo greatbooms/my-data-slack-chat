@@ -116,6 +116,48 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 `local` 프로필은 개발 편의를 위해 로컬 전용 기본 보안값을 제공합니다.
 그래도 실제 Slack 앱을 연결할 때는 `.env`의 `SLACK_SIGNING_SECRET` 값을 Slack 앱 관리 화면의 Signing Secret 값으로 바꾸는 것을 권장합니다.
 
+## 관리자 콘솔
+
+관리자 화면은 React로 만들고, 빌드 결과물을 Spring Boot가 같은 서버에서 정적 리소스로 서빙합니다.
+로컬 애플리케이션을 실행한 뒤 다음 주소로 접속합니다.
+
+```text
+http://localhost:50506/admin-ui
+```
+
+관리자 로그인 화면은 다음 주소에서도 직접 열 수 있습니다.
+
+```text
+http://localhost:50506/admin-ui/login
+```
+
+관리자 화면은 세션 기반 로그인을 사용합니다. 삭제되지 않은 관리자 계정이 없는 새 DB에서는 다음 환경변수로 초기 관리자 계정을 생성합니다.
+
+```bash
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_PASSWORD=change-me
+ADMIN_BOOTSTRAP_DISPLAY_NAME=관리자
+```
+
+관리자 API는 GraphQL로 통신하며 엔드포인트는 다음과 같습니다.
+
+```text
+/admin/graphql
+```
+
+관리자 GraphQL mutation은 관리자 세션과 CSRF 토큰이 필요합니다. 이전의 `ADMIN_API_TOKEN` 기반 관리자 API 방식은 제거되었습니다.
+
+프론트엔드만 개발 서버로 실행하려면 백엔드를 `50506` 포트로 먼저 띄운 뒤 다음 명령을 사용합니다.
+
+```bash
+cd frontend/admin
+npm install
+npm run codegen
+npm run dev
+```
+
+Vite 개발 서버는 기본적으로 `http://localhost:61263/admin-ui`에서 열리고, `/admin/auth/**`와 `/admin/graphql` 요청을 Spring Boot 서버로 프록시합니다.
+
 ## 비로컬 실행
 
 `local` 또는 `test` 프로필이 아닌 환경에서는 보안값을 반드시 직접 지정해야 합니다.
@@ -160,3 +202,5 @@ docker exec my-data-postgres psql -U my_data -d my_data \
 - ACL 필터가 적용된 벡터 검색
 - 출처 저장을 포함한 채팅 답변 흐름
 - Slack 이벤트 엔드포인트 기반
+- 세션 기반 관리자 로그인과 GraphQL 관리자 API
+- React 관리자 콘솔 정적 서빙
