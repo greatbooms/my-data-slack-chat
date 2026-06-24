@@ -29,7 +29,11 @@ my-data:
       password: ${ADMIN_BOOTSTRAP_PASSWORD:}
       display-name: ${ADMIN_BOOTSTRAP_DISPLAY_NAME:관리자}
   slack:
-    signing-secret: ${SLACK_SIGNING_SECRET}
+    signing-secret: ${SLACK_SIGNING_SECRET:}
+    app-token: ${SLACK_APP_TOKEN:}
+    bot-token: ${SLACK_BOT_TOKEN:}
+    socket-mode-enabled: ${SLACK_SOCKET_MODE_ENABLED:false}
+    http-events-enabled: ${SLACK_HTTP_EVENTS_ENABLED:false}
   embedding:
     model: ${EMBEDDING_MODEL:deterministic-1536}
     dimensions: 1536

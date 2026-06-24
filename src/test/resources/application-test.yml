@@ -8,6 +8,10 @@ spring:
 my-data:
   slack:
     signing-secret: test-signing-secret
+    app-token: test-app-token
+    bot-token: test-bot-token
+    socket-mode-enabled: false
+    http-events-enabled: true
   embedding:
     model: deterministic-1536
     dimensions: 1536

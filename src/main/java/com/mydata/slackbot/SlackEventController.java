@@ -1,6 +1,6 @@
 package com.mydata.slackbot;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.MediaType;
@@ -14,17 +14,18 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @RestController
+@ConditionalOnProperty(prefix = "my-data.slack", name = "http-events-enabled", havingValue = "true")
 public class SlackEventController {
     private final SlackSignatureVerifier signatureVerifier;
     private final ObjectMapper objectMapper;
     private final Environment environment;
 
     public SlackEventController(
-        @Value("${my-data.slack.signing-secret}") String signingSecret,
+        SlackBotProperties slack,
         ObjectMapper objectMapper,
         Environment environment
     ) {
-        this.signatureVerifier = new SlackSignatureVerifier(signingSecret);
+        this.signatureVerifier = new SlackSignatureVerifier(slack.signingSecret());
         this.objectMapper = objectMapper;
         this.environment = environment;
     }

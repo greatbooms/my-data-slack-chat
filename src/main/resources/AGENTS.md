@@ -12,4 +12,5 @@
 
 - 기본 서버 포트는 `50506`입니다.
 - 로컬 DB 포트는 `5433`입니다.
+- Slack은 기본 비활성화이며 `SLACK_SOCKET_MODE_ENABLED` 또는 `SLACK_HTTP_EVENTS_ENABLED`로 수신 방식을 명시적으로 켭니다.
 - 환경변수 변경 시 `.env.example`과 README 환경변수 표도 확인합니다.

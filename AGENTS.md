@@ -15,7 +15,7 @@
 - 결정적 임베딩 클라이언트
 - ACL 필터가 적용된 벡터 검색
 - 채팅 답변과 출처 저장
-- Slack 이벤트 엔드포인트 기반
+- Slack Socket Mode 수신 기반과 선택형 HTTP Events API 엔드포인트
 
 ## 로컬 실행
 
@@ -33,6 +33,12 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 
 ## 작업 규칙
 
+- 새 기능이나 수정 작업을 시작할 때는 먼저 `main` 브랜치를 최신 원격 상태로 pull 받습니다.
+- 실제 작업은 최신 `main` 기준에서 `codex/` 접두사의 작업 브랜치를 새로 만든 뒤 진행합니다.
+- 이미 진행 중인 작업 브랜치가 있다면, 새 작업과 섞이지 않는지 확인한 뒤 계속 사용할지 새 브랜치를 만들지 판단합니다.
+- 코드 탐색을 시작할 때는 현재 디렉터리를 Serena 프로젝트로 활성화하고 Serena initial instructions를 먼저 읽습니다.
+- 코드 구조 탐색은 `grep` 같은 단순 텍스트 검색보다 Serena symbolic tools를 우선 사용합니다.
+- 필요한 심볼이나 관계를 Serena로 좁힌 뒤, 부족한 경우에만 `rg` 같은 텍스트 검색을 보조로 사용합니다.
 - 사용자-facing 답변과 문서는 한국어로 작성합니다.
 - 실제 비밀값은 커밋하지 않습니다. `.env`는 `.gitignore`에 포함되어 있고, 공유용 값은 `.env.example`에만 둡니다.
 - DB 스키마 변경은 `src/main/resources/db/changelog/db.changelog-master.sql`의 Liquibase changeset으로 관리합니다.
