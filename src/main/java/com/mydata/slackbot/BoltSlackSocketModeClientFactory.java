@@ -7,6 +7,8 @@ import com.slack.api.model.event.AppMentionEvent;
 import com.slack.api.model.event.MessageEvent;
 import org.springframework.stereotype.Component;
 
+import java.util.regex.Pattern;
+
 @Component
 public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFactory {
     private final SlackSocketModeEventHandler eventHandler;
@@ -23,14 +25,16 @@ public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFa
 
         app.event(AppMentionEvent.class, (payload, context) -> {
             AppMentionEvent event = payload.getEvent();
-            eventHandler.handleAppMention(
-                firstNonBlank(payload.getTeamId(), event.getTeam()),
-                event.getChannel(),
-                event.getUser(),
-                event.getText(),
-                event.getTs(),
-                event.getThreadTs()
-            );
+            if (isUserAppMention(event)) {
+                eventHandler.handleAppMention(
+                    firstNonBlank(payload.getTeamId(), event.getTeam()),
+                    event.getChannel(),
+                    event.getUser(),
+                    stripLeadingBotMention(event.getText(), context.getBotUserId()),
+                    event.getTs(),
+                    event.getThreadTs()
+                );
+            }
             return context.ack();
         });
 
@@ -52,10 +56,31 @@ public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFa
         return new BoltSlackSocketModeClient(appToken, app);
     }
 
-    private static boolean isDirectUserMessage(MessageEvent event) {
+    static boolean isUserAppMention(AppMentionEvent event) {
+        return event != null
+            && !isBlank(event.getUser())
+            && isBlank(event.getBotId())
+            && isBlank(event.getSubtype())
+            && event.getEdited() == null;
+    }
+
+    static boolean isDirectUserMessage(MessageEvent event) {
         return "im".equals(event.getChannelType())
             && !isBlank(event.getUser())
-            && isBlank(event.getBotId());
+            && isBlank(event.getBotId())
+            && event.getEdited() == null;
+    }
+
+    static String stripLeadingBotMention(String text, String botUserId) {
+        if (isBlank(text) || isBlank(botUserId)) {
+            return text;
+        }
+
+        Pattern leadingMention = Pattern.compile("^<@" + Pattern.quote(botUserId) + "(?:\\|[^>]+)?>\\s*");
+        if (!leadingMention.matcher(text).find()) {
+            return text;
+        }
+        return leadingMention.matcher(text).replaceFirst("").trim();
     }
 
     private static String firstNonBlank(String first, String second) {

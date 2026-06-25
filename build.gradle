@@ -41,6 +41,7 @@ dependencies {
     implementation 'org.liquibase:liquibase-core'
 
     runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'org.glassfish.tyrus.bundles:tyrus-standalone-client:2.2.0'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
