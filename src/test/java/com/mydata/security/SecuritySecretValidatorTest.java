@@ -1,5 +1,6 @@
 package com.mydata.security;
 
+import com.mydata.slackbot.SlackBotProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
@@ -8,10 +9,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SecuritySecretValidatorTest {
     @Test
-    void rejectsBlankSlackSigningSecret() {
+    void allowsBlankSigningSecretWhenSlackHttpEventsAreDisabled() {
         SecuritySecretValidator validator = new SecuritySecretValidator(
             new MockEnvironment(),
-            "\t"
+            new SlackBotProperties("", "", "", false, false)
+        );
+
+        assertThatCode(validator::validate).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsBlankSlackSigningSecretWhenHttpEventsAreEnabled() {
+        SecuritySecretValidator validator = new SecuritySecretValidator(
+            new MockEnvironment(),
+            new SlackBotProperties("\t", "", "", false, true)
         );
 
         assertThatThrownBy(validator::validate)
@@ -20,10 +31,10 @@ class SecuritySecretValidatorTest {
     }
 
     @Test
-    void rejectsLocalDefaultsOutsideLocalAndTestProfiles() {
+    void rejectsLocalSigningSecretOutsideLocalAndTestProfilesWhenHttpEventsAreEnabled() {
         SecuritySecretValidator validator = new SecuritySecretValidator(
             new MockEnvironment(),
-            "local-signing-secret"
+            new SlackBotProperties("local-signing-secret", "", "", false, true)
         );
 
         assertThatThrownBy(validator::validate)
@@ -32,12 +43,34 @@ class SecuritySecretValidatorTest {
     }
 
     @Test
-    void allowsLocalDefaultsForLocalProfile() {
+    void allowsLocalSigningSecretForLocalProfileWhenHttpEventsAreEnabled() {
         MockEnvironment environment = new MockEnvironment();
         environment.setActiveProfiles("local");
         SecuritySecretValidator validator = new SecuritySecretValidator(
             environment,
-            "local-signing-secret"
+            new SlackBotProperties("local-signing-secret", "", "", false, true)
+        );
+
+        assertThatCode(validator::validate).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsMissingSocketModeTokensWhenSocketModeIsEnabled() {
+        SecuritySecretValidator validator = new SecuritySecretValidator(
+            new MockEnvironment(),
+            new SlackBotProperties("", "xapp-token", "", true, false)
+        );
+
+        assertThatThrownBy(validator::validate)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("my-data.slack.bot-token 값");
+    }
+
+    @Test
+    void allowsSocketModeTokensWithoutSigningSecret() {
+        SecuritySecretValidator validator = new SecuritySecretValidator(
+            new MockEnvironment(),
+            new SlackBotProperties("", "xapp-token", "xoxb-token", true, false)
         );
 
         assertThatCode(validator::validate).doesNotThrowAnyException();
