@@ -15,7 +15,8 @@ public final class AdminDataSourceInputs {
         DataSourceType type,
         String name,
         DataSourceVisibility visibility,
-        SyncMode syncMode
+        SyncMode syncMode,
+        String notionRootPageId
     ) {
     }
 
@@ -24,7 +25,8 @@ public final class AdminDataSourceInputs {
         String name,
         DataSourceStatus status,
         DataSourceVisibility visibility,
-        SyncMode syncMode
+        SyncMode syncMode,
+        String notionRootPageId
     ) {
     }
 }

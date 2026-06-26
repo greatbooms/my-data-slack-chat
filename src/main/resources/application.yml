@@ -34,6 +34,10 @@ my-data:
     bot-token: ${SLACK_BOT_TOKEN:}
     socket-mode-enabled: ${SLACK_SOCKET_MODE_ENABLED:false}
     http-events-enabled: ${SLACK_HTTP_EVENTS_ENABLED:false}
+  notion:
+    api-token: ${NOTION_API_TOKEN:}
+    api-version: ${NOTION_API_VERSION:2026-03-11}
+    base-url: ${NOTION_BASE_URL:https://api.notion.com}
   embedding:
     model: ${EMBEDDING_MODEL:deterministic-1536}
     dimensions: 1536

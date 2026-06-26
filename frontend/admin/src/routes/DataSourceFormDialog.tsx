@@ -5,11 +5,14 @@ import type {
   DataSourceStatus,
   DataSourceType,
   DataSourceVisibility,
-  SyncMode
+  SyncMode,
+  UserFieldsFragment,
+  WorkspaceFieldsFragment
 } from '../generated/graphql';
 
 export type DataSourceFormValues = {
   name: string;
+  notionRootPageId: string;
   ownerUserId: string;
   status: DataSourceStatus;
   syncMode: SyncMode;
@@ -21,6 +24,8 @@ export type DataSourceFormValues = {
 type DataSourceFormDialogProps = {
   dataSource: DataSourceFieldsFragment | null;
   isSubmitting: boolean;
+  users: UserFieldsFragment[];
+  workspaces: WorkspaceFieldsFragment[];
   onClose: () => void;
   onSubmit: (values: DataSourceFormValues) => void;
 };
@@ -28,6 +33,8 @@ type DataSourceFormDialogProps = {
 function DataSourceFormDialog({
   dataSource,
   isSubmitting,
+  users,
+  workspaces,
   onClose,
   onSubmit
 }: DataSourceFormDialogProps) {
@@ -36,6 +43,14 @@ function DataSourceFormDialog({
   useEffect(() => {
     setValues(createInitialValues(dataSource));
   }, [dataSource]);
+
+  useEffect(() => {
+    setValues((currentValues) => ({
+      ...currentValues,
+      ownerUserId: currentValues.ownerUserId || users[0]?.id || '',
+      workspaceId: currentValues.workspaceId || workspaces[0]?.id || ''
+    }));
+  }, [users, workspaces]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,22 +80,40 @@ function DataSourceFormDialog({
           </label>
 
           <label>
-            워크스페이스 ID
-            <input
+            워크스페이스
+            <select
               value={values.workspaceId}
               disabled={Boolean(dataSource)}
               required
               onChange={(event) => setValues({ ...values, workspaceId: event.target.value })}
-            />
+            >
+              <option value="" disabled>
+                워크스페이스 선택
+              </option>
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
-            소유 유저 ID
-            <input
+            소유 유저
+            <select
               value={values.ownerUserId}
               required
               onChange={(event) => setValues({ ...values, ownerUserId: event.target.value })}
-            />
+            >
+              <option value="" disabled>
+                유저 선택
+              </option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.displayName} · {user.email}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
@@ -96,6 +129,18 @@ function DataSourceFormDialog({
               <option value="SLACK">SLACK</option>
             </select>
           </label>
+
+          {values.type === 'NOTION' ? (
+            <label>
+              Notion 루트 페이지 ID
+              <input
+                value={values.notionRootPageId}
+                disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
+                required
+                onChange={(event) => setValues({ ...values, notionRootPageId: event.target.value })}
+              />
+            </label>
+          ) : null}
 
           {dataSource ? (
             <label>
@@ -151,6 +196,7 @@ function DataSourceFormDialog({
 function createInitialValues(dataSource: DataSourceFieldsFragment | null): DataSourceFormValues {
   return {
     name: dataSource?.name ?? '',
+    notionRootPageId: dataSource?.notionRootPageId ?? '',
     ownerUserId: dataSource?.ownerUserId ?? '',
     status: dataSource?.status ?? 'ACTIVE',
     syncMode: dataSource?.syncMode ?? 'MANUAL',

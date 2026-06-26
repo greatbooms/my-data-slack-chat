@@ -59,6 +59,55 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+def localEnvFile = layout.projectDirectory.file('.env')
+
+Map<String, String> loadLocalEnv(File envFile) {
+    if (!envFile.exists()) {
+        return [:]
+    }
+
+    return envFile.readLines('UTF-8').collectEntries { line ->
+        def trimmed = line.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith('#')) {
+            return [:]
+        }
+        if (trimmed.startsWith('export ')) {
+            trimmed = trimmed.substring('export '.length()).trim()
+        }
+
+        def separatorIndex = trimmed.indexOf('=')
+        if (separatorIndex <= 0) {
+            return [:]
+        }
+
+        def key = trimmed.substring(0, separatorIndex).trim()
+        if (!(key ==~ /[A-Za-z_][A-Za-z0-9_]*/)) {
+            return [:]
+        }
+
+        def value = trimmed.substring(separatorIndex + 1).trim()
+        if (value.length() >= 2) {
+            def first = value.charAt(0)
+            def last = value.charAt(value.length() - 1)
+            if ((first == '"' as char && last == '"' as char) || (first == '\'' as char && last == '\'' as char)) {
+                value = value.substring(1, value.length() - 1)
+            }
+        }
+
+        return [(key): value]
+    }
+}
+
+tasks.named('bootRun') {
+    doFirst {
+        loadLocalEnv(localEnvFile.asFile).each { key, value ->
+            if (System.getenv(key) == null) {
+                environment key, value
+            }
+        }
+    }
+}
+
 def adminUiDirectory = layout.projectDirectory.dir('frontend/admin')
 def adminUiDistDirectory = adminUiDirectory.dir('dist')
 def adminUiStaticDirectory = layout.buildDirectory.dir('resources/main/static/admin-ui')

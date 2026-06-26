@@ -4,6 +4,7 @@ import com.mydata.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -13,6 +14,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AdminUiWebConfigurationTest extends PostgresIntegrationTest {
@@ -46,11 +48,13 @@ class AdminUiWebConfigurationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void protectsAdminUiApplicationRoutes() throws Exception {
-        mockMvc.perform(get("/admin-ui"))
-            .andExpect(status().isUnauthorized());
+    void redirectsAnonymousAdminUiApplicationRoutesToLogin() throws Exception {
+        mockMvc.perform(get("/admin-ui").accept(MediaType.TEXT_HTML))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/admin-ui/login"));
 
-        mockMvc.perform(get("/admin-ui/data-sources"))
-            .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/admin-ui/data-sources").accept(MediaType.TEXT_HTML))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/admin-ui/login"));
     }
 }

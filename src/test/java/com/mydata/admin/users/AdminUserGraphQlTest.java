@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,6 +35,7 @@ class AdminUserGraphQlTest extends PostgresIntegrationTest {
     @Autowired WebApplicationContext webApplicationContext;
     @Autowired UserRepository users;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUpMockMvc() {
@@ -74,6 +76,14 @@ class AdminUserGraphQlTest extends PostgresIntegrationTest {
             .andReturn();
 
         String userId = JsonPaths.readString(createResult, "$.data.createUser.id");
+        Integer personalWorkspaceCount = jdbcTemplate.queryForObject("""
+            SELECT count(*)
+            FROM workspaces
+            WHERE owner_user_id = ?::uuid
+              AND name = 'Personal'
+              AND deleted_at IS NULL
+            """, Integer.class, userId);
+        assertThat(personalWorkspaceCount).isEqualTo(1);
 
         graphQl(adminSession, """
             query {

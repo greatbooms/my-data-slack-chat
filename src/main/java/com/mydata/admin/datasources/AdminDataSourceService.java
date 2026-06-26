@@ -4,6 +4,7 @@ import com.mydata.admin.datasources.AdminDataSourceInputs.CreateDataSourceInput;
 import com.mydata.admin.datasources.AdminDataSourceInputs.UpdateDataSourceInput;
 import com.mydata.auth.Permission;
 import com.mydata.auth.PrincipalKeys;
+import com.mydata.connectors.notion.NotionPageConnector;
 import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceStatus;
@@ -79,20 +80,22 @@ public class AdminDataSourceService {
     public AdminDataSourcePayload createDataSource(CreateDataSourceInput input) {
         UUID workspaceId = parseId(input.workspaceId(), "workspaceId");
         UUID ownerUserId = parseId(input.ownerUserId(), "ownerUserId");
-        workspaces.findById(workspaceId)
+        workspaces.findByIdAndDeletedAtIsNull(workspaceId)
             .orElseThrow(() -> new IllegalArgumentException("워크스페이스를 찾을 수 없습니다"));
         users.findByIdAndDeletedAtIsNull(ownerUserId)
             .orElseThrow(() -> new IllegalArgumentException("소유자를 찾을 수 없습니다"));
 
+        DataSourceType type = requireType(input.type());
         DataSourceEntity dataSource = DataSourceEntity.create(
             workspaceId,
-            requireType(input.type()),
+            type,
             requireText(input.name(), "name"),
             DataSourceStatus.ACTIVE,
             input.syncMode() == null ? SyncMode.MANUAL : input.syncMode()
         );
         dataSource.assignOwner(ownerUserId);
         dataSource.changeVisibility(input.visibility() == null ? DataSourceVisibility.PRIVATE : input.visibility());
+        applyCreateConfig(dataSource, input);
         DataSourceEntity savedDataSource = dataSources.save(dataSource);
         rebuildPolicy(savedDataSource);
         return AdminDataSourcePayload.from(savedDataSource);
@@ -120,6 +123,7 @@ public class AdminDataSourceService {
         if (input.visibility() != null) {
             dataSource.changeVisibility(input.visibility());
         }
+        applyUpdateConfig(dataSource, input);
         rebuildPolicy(dataSource);
         return AdminDataSourcePayload.from(dataSource);
     }
@@ -163,12 +167,35 @@ public class AdminDataSourceService {
         jdbcTemplate.update("DELETE FROM data_source_access_policies WHERE data_source_id = ?", dataSource.getId());
     }
 
+    private static void applyCreateConfig(DataSourceEntity dataSource, CreateDataSourceInput input) {
+        if (dataSource.getType() == DataSourceType.NOTION) {
+            dataSource.putConfig(
+                NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY,
+                requireText(input.notionRootPageId(), "notionRootPageId")
+            );
+        }
+    }
+
+    private static void applyUpdateConfig(DataSourceEntity dataSource, UpdateDataSourceInput input) {
+        if (input.notionRootPageId() == null) {
+            return;
+        }
+        if (dataSource.getType() != DataSourceType.NOTION) {
+            throw new IllegalArgumentException("notionRootPageId는 NOTION 데이터소스에서만 설정할 수 있습니다");
+        }
+
+        dataSource.putConfig(
+            NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY,
+            requireText(input.notionRootPageId(), "notionRootPageId")
+        );
+    }
+
     private static DataSourceType requireType(DataSourceType type) {
         if (type == null) {
             throw new IllegalArgumentException("type 값은 비어 있을 수 없습니다");
         }
-        if (type != DataSourceType.LOCAL_TEXT) {
-            throw new IllegalArgumentException("현재 관리자 화면에서는 LOCAL_TEXT 데이터소스만 만들 수 있습니다");
+        if (type != DataSourceType.LOCAL_TEXT && type != DataSourceType.NOTION) {
+            throw new IllegalArgumentException("현재 관리자 화면에서는 LOCAL_TEXT 또는 NOTION 데이터소스만 만들 수 있습니다");
         }
         return type;
     }

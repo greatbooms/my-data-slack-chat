@@ -1,5 +1,6 @@
 package com.mydata.admin.auth;
 
+import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
 import com.mydata.users.UserRole;
@@ -17,23 +18,27 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final AdminBootstrapProperties properties;
     private final Environment environment;
+    private final AdminWorkspaceService adminWorkspaces;
 
     public AdminBootstrapInitializer(
         UserRepository users,
         PasswordEncoder passwordEncoder,
         AdminBootstrapProperties properties,
-        Environment environment
+        Environment environment,
+        AdminWorkspaceService adminWorkspaces
     ) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.environment = environment;
+        this.adminWorkspaces = adminWorkspaces;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         if (hasNonDeletedAdmin()) {
+            adminWorkspaces.ensureDefaultWorkspacesForActiveUsers();
             return;
         }
 
@@ -55,7 +60,8 @@ public class AdminBootstrapInitializer implements ApplicationRunner {
         admin.updateProfile(displayName());
         admin.changeRole(UserRole.ADMIN);
         admin.updatePasswordHash(passwordEncoder.encode(password));
-        users.save(admin);
+        UserEntity savedAdmin = users.save(admin);
+        adminWorkspaces.ensureDefaultWorkspace(savedAdmin);
     }
 
     private boolean hasNonDeletedAdmin() {

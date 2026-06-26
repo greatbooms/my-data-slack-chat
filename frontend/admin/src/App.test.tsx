@@ -141,6 +141,34 @@ describe('관리자 앱 인증 흐름', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('관리자 GraphQL 인증이 실패하면 로그인 화면으로 이동한다', async () => {
+    const assignSpy = vi.fn();
+    const restoreLocation = stubLocationAssign(assignSpy, '/admin-ui/');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        timestamp: '2026-06-26T08:51:22.984Z',
+        status: 403,
+        error: 'Forbidden',
+        path: '/admin/graphql'
+      }, { status: 403 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      renderApp('/');
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith('/admin-ui/login');
+      });
+    } finally {
+      restoreLocation();
+    }
+  });
+
   it('유저 화면에서 목록을 보고 유저를 비활성화한다', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fetchMock = vi.fn()
@@ -209,6 +237,84 @@ describe('관리자 앱 인증 흐름', () => {
     expect(screen.queryByText('유저가 없습니다.')).not.toBeInTheDocument();
   });
 
+  it('워크스페이스 화면에서 생성, 삭제, 복구를 수행한다', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const owner = {
+      id: 'user-id',
+      email: 'owner@example.com',
+      displayName: '데이터 오너',
+      role: 'USER',
+      status: 'ACTIVE',
+      deletedAt: null
+    };
+    const personal = workspaceFixture({ id: 'workspace-id', name: 'Personal' });
+    const team = workspaceFixture({ id: 'team-id', name: 'Team A' });
+    const deletedTeam = workspaceFixture({
+      id: 'team-id',
+      name: 'Team A',
+      deletedAt: '2026-06-26T00:00:00Z'
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminWorkspaceManagementResponse({
+        users: [owner],
+        workspaces: [personal]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('createWorkspace', team))
+      .mockResolvedValueOnce(adminWorkspaceManagementResponse({
+        users: [owner],
+        workspaces: [personal, team]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('softDeleteWorkspace', deletedTeam))
+      .mockResolvedValueOnce(adminWorkspaceManagementResponse({
+        users: [owner],
+        workspaces: [personal, deletedTeam]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('restoreWorkspace', team))
+      .mockResolvedValueOnce(adminWorkspaceManagementResponse({
+        users: [owner],
+        workspaces: [personal, team]
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/workspaces');
+
+    expect(await screen.findByText('Personal')).toBeVisible();
+    expect(screen.getByText('데이터 오너 · owner@example.com')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '워크스페이스 추가' }));
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Team A' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(await screen.findByText('Team A')).toBeVisible();
+    const createBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string);
+    expect(createBody.query).toContain('CreateWorkspace');
+    expect(createBody.variables.input).toMatchObject({
+      name: 'Team A',
+      ownerUserId: 'user-id'
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Team A 삭제' }));
+
+    expect(await screen.findByText('DELETED')).toBeVisible();
+    expect(confirmSpy).toHaveBeenCalledWith('이 워크스페이스를 삭제할까요?');
+    expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query)
+      .toContain('SoftDeleteWorkspace');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Team A 복구' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(8);
+    });
+    expect(JSON.parse((fetchMock.mock.calls[6][1] as RequestInit).body as string).query)
+      .toContain('RestoreWorkspace');
+  });
+
   it('데이터소스 화면에서 목록, 수동 수집, 수집 기록을 관리한다', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
@@ -262,6 +368,86 @@ describe('관리자 앱 인증 흐름', () => {
     expect(await screen.findByText('PENDING')).toBeVisible();
     expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query).toContain('AdminIngestionJobs');
   });
+
+  it('Notion 데이터소스를 만들 때 루트 페이지 ID를 함께 보낸다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([]))
+      .mockResolvedValueOnce(adminDataSourceFormOptionsResponse({
+        users: [
+          {
+            id: 'user-id',
+            email: 'owner@example.com',
+            displayName: '데이터 오너',
+            role: 'USER',
+            status: 'ACTIVE',
+            deletedAt: null
+          }
+        ],
+        workspaces: [
+          {
+            id: 'workspace-id',
+            ownerUserId: 'user-id',
+            name: 'Personal',
+            deletedAt: null
+          }
+        ]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('createDataSource', dataSourceFixture({
+        id: 'notion-source-id',
+        name: 'Notion wiki',
+        notionRootPageId: 'root-page-id'
+      })))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({
+          id: 'notion-source-id',
+          name: 'Notion wiki',
+          notionRootPageId: 'root-page-id'
+        })
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('데이터소스가 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '데이터소스 추가' }));
+    expect(await screen.findByRole('option', { name: 'Personal' })).toBeVisible();
+    expect(screen.getByRole('option', { name: '데이터 오너 · owner@example.com' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Notion wiki' }
+    });
+    fireEvent.change(screen.getByLabelText('워크스페이스'), {
+      target: { value: 'workspace-id' }
+    });
+    fireEvent.change(screen.getByLabelText('소유 유저'), {
+      target: { value: 'user-id' }
+    });
+    fireEvent.change(screen.getByLabelText('종류'), {
+      target: { value: 'NOTION' }
+    });
+    fireEvent.change(screen.getByLabelText('Notion 루트 페이지 ID'), {
+      target: { value: 'root-page-id' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    });
+    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).query)
+      .toContain('AdminDataSourceFormOptions');
+    const createBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string);
+    expect(createBody.variables.input).toMatchObject({
+      name: 'Notion wiki',
+      notionRootPageId: 'root-page-id',
+      ownerUserId: 'user-id',
+      type: 'NOTION',
+      workspaceId: 'workspace-id'
+    });
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -272,6 +458,26 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
     status: 200,
     ...init
   });
+}
+
+function stubLocationAssign(assign: (url: string) => void, pathname: string) {
+  const originalLocation = window.location;
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: {
+      assign,
+      href: `http://localhost${pathname}`,
+      origin: 'http://localhost',
+      pathname
+    }
+  });
+
+  return () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation
+    });
+  };
 }
 
 function dashboardResponse(summary: {
@@ -306,6 +512,42 @@ function adminDataSourcesResponse(items: Array<Record<string, unknown>>) {
   });
 }
 
+function adminDataSourceFormOptionsResponse(options: {
+  users: Array<Record<string, unknown>>;
+  workspaces: Array<Record<string, unknown>>;
+}) {
+  return jsonResponse({
+    data: {
+      users: {
+        totalCount: options.users.length,
+        items: options.users
+      },
+      workspaces: {
+        totalCount: options.workspaces.length,
+        items: options.workspaces
+      }
+    }
+  });
+}
+
+function adminWorkspaceManagementResponse(options: {
+  users: Array<Record<string, unknown>>;
+  workspaces: Array<Record<string, unknown>>;
+}) {
+  return jsonResponse({
+    data: {
+      users: {
+        totalCount: options.users.length,
+        items: options.users
+      },
+      workspaces: {
+        totalCount: options.workspaces.length,
+        items: options.workspaces
+      }
+    }
+  });
+}
+
 function graphqlResponse(field: string, value: unknown) {
   return jsonResponse({
     data: {
@@ -324,7 +566,18 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     status: 'ACTIVE',
     syncMode: 'MANUAL',
     visibility: 'PRIVATE',
+    notionRootPageId: null,
     lastSyncedAt: null,
+    deletedAt: null,
+    ...overrides
+  };
+}
+
+function workspaceFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'workspace-id',
+    ownerUserId: 'user-id',
+    name: 'Personal',
     deletedAt: null,
     ...overrides
   };

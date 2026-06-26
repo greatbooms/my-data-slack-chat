@@ -5,6 +5,8 @@ import com.mydata.connectors.core.SyncCursor;
 import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -15,6 +17,8 @@ import java.util.UUID;
 
 @Service
 public class IngestionWorker {
+    private static final Logger log = LoggerFactory.getLogger(IngestionWorker.class);
+
     private final IngestionJobRepository ingestionJobs;
     private final DataSourceRepository dataSources;
     private final IngestionPipelineService pipeline;
@@ -39,10 +43,13 @@ public class IngestionWorker {
     }
 
     public void run(UUID jobId) {
+        log.info("수집 job 실행 시작: {}", jobId);
         markRunning(jobId);
         try {
             ingestAndMarkSucceeded(jobId);
+            log.info("수집 job 성공: {}", jobId);
         } catch (RuntimeException exception) {
+            log.warn("수집 job 실패: {}", jobId, exception);
             markFailed(jobId, exception.getMessage());
         }
     }

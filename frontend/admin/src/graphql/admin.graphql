@@ -30,6 +30,45 @@ query AdminUsers {
   }
 }
 
+query AdminWorkspaces($includeDeleted: Boolean = true) {
+  workspaces(includeDeleted: $includeDeleted) {
+    totalCount
+    items {
+      ...WorkspaceFields
+    }
+  }
+}
+
+query AdminWorkspaceManagement($includeDeleted: Boolean = true) {
+  users {
+    totalCount
+    items {
+      ...UserFields
+    }
+  }
+  workspaces(includeDeleted: $includeDeleted) {
+    totalCount
+    items {
+      ...WorkspaceFields
+    }
+  }
+}
+
+query AdminDataSourceFormOptions {
+  users {
+    totalCount
+    items {
+      ...UserFields
+    }
+  }
+  workspaces {
+    totalCount
+    items {
+      ...WorkspaceFields
+    }
+  }
+}
+
 query AdminIngestionJobs($dataSourceId: ID!, $first: Int = 20) {
   ingestionJobs(dataSourceId: $dataSourceId, first: $first) {
     ...IngestionJobFields
@@ -69,6 +108,30 @@ mutation RestoreUser($id: ID!) {
 mutation ResetUserPassword($id: ID!, $input: ResetUserPasswordInput!) {
   resetUserPassword(id: $id, input: $input) {
     ...UserFields
+  }
+}
+
+mutation CreateWorkspace($input: CreateWorkspaceInput!) {
+  createWorkspace(input: $input) {
+    ...WorkspaceFields
+  }
+}
+
+mutation UpdateWorkspace($id: ID!, $input: UpdateWorkspaceInput!) {
+  updateWorkspace(id: $id, input: $input) {
+    ...WorkspaceFields
+  }
+}
+
+mutation SoftDeleteWorkspace($id: ID!) {
+  softDeleteWorkspace(id: $id) {
+    ...WorkspaceFields
+  }
+}
+
+mutation RestoreWorkspace($id: ID!) {
+  restoreWorkspace(id: $id) {
+    ...WorkspaceFields
   }
 }
 
@@ -114,7 +177,15 @@ fragment DataSourceFields on DataSource {
   status
   syncMode
   visibility
+  notionRootPageId
   lastSyncedAt
+  deletedAt
+}
+
+fragment WorkspaceFields on Workspace {
+  id
+  ownerUserId
+  name
   deletedAt
 }
 

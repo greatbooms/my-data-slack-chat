@@ -17,6 +17,7 @@ public record AdminDataSourcePayload(
     DataSourceStatus status,
     SyncMode syncMode,
     DataSourceVisibility visibility,
+    String notionRootPageId,
     String lastSyncedAt,
     String deletedAt
 ) {
@@ -32,6 +33,7 @@ public record AdminDataSourcePayload(
             dataSource.getStatus(),
             dataSource.getSyncMode(),
             dataSource.getVisibility(),
+            dataSource.configValue("notionRootPageId"),
             lastSyncedAt,
             deletedAt
         );

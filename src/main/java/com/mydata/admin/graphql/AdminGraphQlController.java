@@ -13,6 +13,11 @@ import com.mydata.admin.users.AdminUserInputs.UpdateUserInput;
 import com.mydata.admin.users.AdminUserPagePayload;
 import com.mydata.admin.users.AdminUserPayload;
 import com.mydata.admin.users.AdminUserService;
+import com.mydata.admin.workspaces.AdminWorkspaceInputs.CreateWorkspaceInput;
+import com.mydata.admin.workspaces.AdminWorkspaceInputs.UpdateWorkspaceInput;
+import com.mydata.admin.workspaces.AdminWorkspacePagePayload;
+import com.mydata.admin.workspaces.AdminWorkspacePayload;
+import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.ingestion.IngestionJobStatus;
@@ -35,6 +40,7 @@ public class AdminGraphQlController {
     private final DataSourceRepository dataSources;
     private final IngestionJobRepository ingestionJobs;
     private final AdminUserService adminUsers;
+    private final AdminWorkspaceService adminWorkspaces;
     private final AdminDataSourceService adminDataSources;
 
     public AdminGraphQlController(
@@ -42,12 +48,14 @@ public class AdminGraphQlController {
         DataSourceRepository dataSources,
         IngestionJobRepository ingestionJobs,
         AdminUserService adminUsers,
+        AdminWorkspaceService adminWorkspaces,
         AdminDataSourceService adminDataSources
     ) {
         this.users = users;
         this.dataSources = dataSources;
         this.ingestionJobs = ingestionJobs;
         this.adminUsers = adminUsers;
+        this.adminWorkspaces = adminWorkspaces;
         this.adminDataSources = adminDataSources;
     }
 
@@ -87,6 +95,36 @@ public class AdminGraphQlController {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminUserPayload user(@Argument String id) {
         return adminUsers.findUser(id);
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminWorkspacePagePayload workspaces(@Argument Boolean includeDeleted) {
+        return adminWorkspaces.listWorkspaces(includeDeleted);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminWorkspacePayload createWorkspace(@Argument CreateWorkspaceInput input) {
+        return adminWorkspaces.createWorkspace(input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminWorkspacePayload updateWorkspace(@Argument String id, @Argument UpdateWorkspaceInput input) {
+        return adminWorkspaces.updateWorkspace(id, input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminWorkspacePayload softDeleteWorkspace(@Argument String id) {
+        return adminWorkspaces.softDeleteWorkspace(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminWorkspacePayload restoreWorkspace(@Argument String id) {
+        return adminWorkspaces.restoreWorkspace(id);
     }
 
     @MutationMapping

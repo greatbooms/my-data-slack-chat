@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity, UUID> {
     List<IngestionJobEntity> findByDataSourceIdOrderByCreatedAtDesc(UUID dataSourceId);
+
+    List<IngestionJobEntity> findTop10ByStatusOrderByCreatedAtAsc(IngestionJobStatus status);
 }

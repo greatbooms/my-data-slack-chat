@@ -161,6 +161,68 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             .andExpect(jsonPath("$.data.dataSources.items[*].name").value(not(hasItem("Workspace notes"))));
     }
 
+    @Test
+    void createsNotionDataSourceWithRootPageConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Notion wiki",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "root-page-id"
+              }) {
+                id
+                type
+                notionRootPageId
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.type").value("NOTION"))
+            .andExpect(jsonPath("$.data.createDataSource.notionRootPageId").value("root-page-id"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("notionRootPageId")).isEqualTo("root-page-id");
+        assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void listsWorkspaceOptionsForDataSourceForm() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("workspace-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("workspace-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            query {
+              workspaces {
+                totalCount
+                items {
+                  id
+                  ownerUserId
+                  name
+                }
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.workspaces.items[?(@.id == '%s')].name".formatted(workspace.getId()))
+                .value(hasItem("Personal")))
+            .andExpect(jsonPath("$.data.workspaces.items[?(@.id == '%s')].ownerUserId".formatted(workspace.getId()))
+                .value(hasItem(owner.getId().toString())))
+            .andExpect(jsonPath("$.data.workspaces.totalCount").isNumber());
+    }
+
     private MockHttpSession loginAs(String email) throws Exception {
         UserEntity admin = UserEntity.create(email, "관리자");
         admin.changeRole(UserRole.ADMIN);
