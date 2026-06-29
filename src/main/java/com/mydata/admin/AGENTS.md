@@ -10,6 +10,7 @@
 - `graphql/AdminGraphQlController`: 관리자 GraphQL query/mutation 진입점
 - `ui/AdminUiWebConfiguration`: 관리자 React 앱 정적 서빙과 SPA fallback
 - `users/AdminUserService`: 관리자 사용자 관리 로직
+- `workspaces/AdminWorkspaceService`: 관리자 워크스페이스 생성, 수정, 소프트 삭제, 복구 로직
 - `datasources/AdminDataSourceService`: 관리자 데이터소스 관리와 수동 수집 요청 로직
 
 ## 주의사항
