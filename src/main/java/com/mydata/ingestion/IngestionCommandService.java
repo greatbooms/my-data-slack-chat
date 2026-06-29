@@ -21,7 +21,7 @@ public class IngestionCommandService {
 
     @Transactional
     public IngestionJobEntity requestManualSync(UUID dataSourceId, UUID requestedByUserId) {
-        DataSourceEntity dataSource = dataSources.findById(dataSourceId)
+        DataSourceEntity dataSource = dataSources.findActiveById(dataSourceId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "data source not found"));
 
         return ingestionJobs.save(IngestionJobEntity.pending(

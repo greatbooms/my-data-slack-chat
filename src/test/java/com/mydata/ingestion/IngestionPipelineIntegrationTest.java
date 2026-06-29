@@ -95,6 +95,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 assertThat(chunk.getTokenCount()).isEqualTo(8);
             });
         assertThat(reloadedJob.getStatus()).isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(dataSources.findById(dataSource.getId()).orElseThrow().getLastSyncedAt())
+            .isNotNull();
     }
 
     @Test

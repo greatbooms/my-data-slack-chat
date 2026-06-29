@@ -52,7 +52,7 @@ public class AdminDataSourceService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasRole('ADMIN')")
     public AdminDataSourcePagePayload listDataSources() {
-        List<AdminDataSourcePayload> items = dataSources.findByDeletedAtIsNullOrderByCreatedAtDesc().stream()
+        List<AdminDataSourcePayload> items = dataSources.findActiveOrderByCreatedAtDesc().stream()
             .map(AdminDataSourcePayload::from)
             .toList();
         return new AdminDataSourcePagePayload(items, items.size());
@@ -146,7 +146,7 @@ public class AdminDataSourceService {
     }
 
     private DataSourceEntity activeDataSource(String id) {
-        return dataSources.findByIdAndDeletedAtIsNull(parseId(id, "dataSourceId"))
+        return dataSources.findActiveById(parseId(id, "dataSourceId"))
             .orElseThrow(() -> new IllegalArgumentException("데이터소스를 찾을 수 없습니다"));
     }
 

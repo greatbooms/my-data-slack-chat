@@ -145,4 +145,40 @@ class PgVectorSearchRepositoryTest extends PostgresIntegrationTest {
 
         assertThat(hidden).isEmpty();
     }
+
+    @Test
+    void excludesDocumentsFromDeletedWorkspace() {
+        UserEntity owner = users.save(UserEntity.create("deleted-workspace-retrieval-owner@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Deleted retrieval workspace"));
+        DataSourceEntity source = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Deleted workspace notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        source.putConfig("externalId", "deleted-workspace-note");
+        source.putConfig("title", "Deleted workspace note");
+        source.putConfig("content", "deleted workspace searchable content");
+        source.putConfig("principalKey", PrincipalKeys.user(owner.getId()));
+        source = dataSources.saveAndFlush(source);
+        IngestionJobEntity job = jobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            source.getId(),
+            IngestionTriggerType.MANUAL,
+            owner.getId()
+        ));
+        worker.run(job.getId());
+        workspace.markDeleted();
+        workspaces.saveAndFlush(workspace);
+
+        List<RetrievedChunk> hidden = retrievalService.retrieve(
+            workspace.getId(),
+            List.of(PrincipalKeys.user(owner.getId())),
+            "searchable content",
+            5
+        );
+
+        assertThat(hidden).isEmpty();
+    }
 }

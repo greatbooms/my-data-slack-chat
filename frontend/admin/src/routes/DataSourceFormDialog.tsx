@@ -124,9 +124,7 @@ function DataSourceFormDialog({
               onChange={(event) => setValues({ ...values, type: event.target.value as DataSourceType })}
             >
               <option value="LOCAL_TEXT">LOCAL_TEXT</option>
-              <option value="GOOGLE_DRIVE">GOOGLE_DRIVE</option>
               <option value="NOTION">NOTION</option>
-              <option value="SLACK">SLACK</option>
             </select>
           </label>
 

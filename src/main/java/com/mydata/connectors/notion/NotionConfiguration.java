@@ -14,11 +14,14 @@ class NotionConfiguration {
     @Bean
     NotionClient notionClient(NotionProperties properties, ObjectMapper objectMapper) {
         return new NotionApiClient(
-            HttpClient.newHttpClient(),
+            HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .build(),
             objectMapper,
             properties.baseUrl(),
             properties.apiToken(),
-            properties.apiVersion()
+            properties.apiVersion(),
+            properties.requestTimeout()
         );
     }
 }

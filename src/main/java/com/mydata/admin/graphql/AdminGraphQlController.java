@@ -77,7 +77,7 @@ public class AdminGraphQlController {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminDashboardSummaryPayload dashboardSummary() {
         int userCount = users.findByDeletedAtIsNullOrderByCreatedAtDesc().size();
-        int dataSourceCount = dataSources.findByDeletedAtIsNullOrderByCreatedAtDesc().size();
+        int dataSourceCount = dataSources.findActiveOrderByCreatedAtDesc().size();
         int runningJobCount = (int) ingestionJobs.findAll().stream()
             .filter(job -> job.getStatus() == IngestionJobStatus.RUNNING)
             .count();

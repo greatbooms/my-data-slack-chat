@@ -11,18 +11,21 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
 public class NotionApiClient implements NotionClient {
     private static final int PAGE_SIZE = 100;
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final URI baseUri;
     private final String apiToken;
     private final String notionVersion;
+    private final Duration requestTimeout;
 
     public NotionApiClient(
         HttpClient httpClient,
@@ -31,11 +34,23 @@ public class NotionApiClient implements NotionClient {
         String apiToken,
         String notionVersion
     ) {
+        this(httpClient, objectMapper, baseUri, apiToken, notionVersion, DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    public NotionApiClient(
+        HttpClient httpClient,
+        ObjectMapper objectMapper,
+        URI baseUri,
+        String apiToken,
+        String notionVersion,
+        Duration requestTimeout
+    ) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.baseUri = baseUri;
         this.apiToken = apiToken;
         this.notionVersion = notionVersion;
+        this.requestTimeout = requestTimeout == null ? DEFAULT_REQUEST_TIMEOUT : requestTimeout;
     }
 
     @Override
@@ -81,6 +96,7 @@ public class NotionApiClient implements NotionClient {
     private JsonNode getJson(String pathAndQuery) {
         HttpRequest request = HttpRequest.newBuilder(baseUri.resolve(pathAndQuery))
             .GET()
+            .timeout(requestTimeout)
             .header("Authorization", "Bearer " + apiToken)
             .header("Notion-Version", notionVersion)
             .header("Accept", "application/json")

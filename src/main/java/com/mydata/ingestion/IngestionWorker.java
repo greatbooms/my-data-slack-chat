@@ -44,7 +44,10 @@ public class IngestionWorker {
 
     public void run(UUID jobId) {
         log.info("수집 job 실행 시작: {}", jobId);
-        markRunning(jobId);
+        if (!claimPendingJob(jobId)) {
+            log.info("수집 job 실행 건너뜀: {} already claimed or completed", jobId);
+            return;
+        }
         try {
             ingestAndMarkSucceeded(jobId);
             log.info("수집 job 성공: {}", jobId);
@@ -54,17 +57,16 @@ public class IngestionWorker {
         }
     }
 
-    private void markRunning(UUID jobId) {
-        transactions.executeWithoutResult(status -> {
-            IngestionJobEntity job = loadJob(jobId);
-            job.markRunning();
-        });
+    private boolean claimPendingJob(UUID jobId) {
+        return Boolean.TRUE.equals(transactions.execute(status ->
+            ingestionJobs.markPendingJobRunning(jobId) == 1
+        ));
     }
 
     private void ingestAndMarkSucceeded(UUID jobId) {
         transactions.executeWithoutResult(status -> {
             IngestionJobEntity job = loadJob(jobId);
-            DataSourceEntity dataSource = dataSources.findById(job.getDataSourceId())
+            DataSourceEntity dataSource = dataSources.findActiveById(job.getDataSourceId())
                 .orElseThrow(() -> new IllegalStateException("데이터소스를 찾을 수 없습니다: " + job.getDataSourceId()));
             DataSourceConnector connector = connectors.get(dataSource.getType());
             if (connector == null) {
@@ -72,6 +74,7 @@ public class IngestionWorker {
             }
 
             connector.fetchChanges(dataSource, new SyncCursor(Map.of()), rawDocument -> pipeline.ingest(dataSource, rawDocument));
+            dataSource.markSynced();
             job.markSucceeded();
         });
     }

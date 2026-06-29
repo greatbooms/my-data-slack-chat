@@ -124,6 +124,11 @@ public class DataSourceEntity extends BaseEntity {
         touch();
     }
 
+    public void markSynced() {
+        lastSyncedAt = OffsetDateTime.now();
+        touch();
+    }
+
     public void restore() {
         deletedAt = null;
         touch();

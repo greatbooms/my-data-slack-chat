@@ -38,6 +38,8 @@ my-data:
     api-token: ${NOTION_API_TOKEN:}
     api-version: ${NOTION_API_VERSION:2026-03-11}
     base-url: ${NOTION_BASE_URL:https://api.notion.com}
+    connect-timeout: ${NOTION_CONNECT_TIMEOUT:5s}
+    request-timeout: ${NOTION_REQUEST_TIMEOUT:30s}
   embedding:
     model: ${EMBEDDING_MODEL:deterministic-1536}
     dimensions: 1536

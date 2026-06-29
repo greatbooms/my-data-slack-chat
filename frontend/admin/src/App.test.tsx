@@ -426,6 +426,10 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('소유 유저'), {
       target: { value: 'user-id' }
     });
+    expect(screen.getByRole('option', { name: 'LOCAL_TEXT' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'NOTION' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: 'GOOGLE_DRIVE' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'SLACK' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'NOTION' }
     });

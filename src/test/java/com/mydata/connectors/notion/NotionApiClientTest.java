@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -133,6 +134,32 @@ class NotionApiClientTest {
             .hasMessageContaining("404")
             .hasMessageContaining("object_not_found")
             .hasMessageNotContaining("notion-token");
+    }
+
+    @Test
+    void timesOutSlowRequests() {
+        server.createContext("/v1/pages/slow", exchange -> {
+            try {
+                Thread.sleep(500);
+                respond(exchange, 200, """
+                    { "id": "slow", "properties": {} }
+                    """);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        NotionApiClient client = new NotionApiClient(
+            HttpClient.newHttpClient(),
+            new ObjectMapper(),
+            URI.create("http://localhost:" + server.getAddress().getPort()),
+            "notion-token",
+            "2026-03-11",
+            Duration.ofMillis(50)
+        );
+
+        assertThatThrownBy(() -> client.retrievePage("slow"))
+            .isInstanceOf(NotionApiException.class)
+            .hasMessageContaining("Notion API 요청에 실패했습니다");
     }
 
     private NotionApiClient client() {

@@ -2,7 +2,11 @@ package com.mydata.admin.datasources;
 
 import com.mydata.auth.Permission;
 import com.mydata.auth.PrincipalKeys;
+import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
+import com.mydata.datasources.DataSourceStatus;
+import com.mydata.datasources.DataSourceType;
+import com.mydata.datasources.SyncMode;
 import com.mydata.support.PostgresIntegrationTest;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
@@ -221,6 +225,46 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             .andExpect(jsonPath("$.data.workspaces.items[?(@.id == '%s')].ownerUserId".formatted(workspace.getId()))
                 .value(hasItem(owner.getId().toString())))
             .andExpect(jsonPath("$.data.workspaces.totalCount").isNumber());
+    }
+
+    @Test
+    void excludesDataSourcesFromDeletedWorkspaces() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("archived-workspace-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Archived workspace"));
+        DataSourceEntity dataSource = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Archived workspace notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        workspace.markDeleted();
+        workspaces.saveAndFlush(workspace);
+        MockHttpSession adminSession = loginAs("archived-workspace-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            query {
+              dataSources {
+                items {
+                  name
+                }
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.dataSources.items[*].name")
+                .value(not(hasItem("Archived workspace notes"))));
+
+        graphQl(adminSession, """
+            mutation {
+              requestDataSourceSync(id: "%s") {
+                id
+              }
+            }
+            """.formatted(dataSource.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message").value("데이터소스를 찾을 수 없습니다"));
     }
 
     private MockHttpSession loginAs(String email) throws Exception {
