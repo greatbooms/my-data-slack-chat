@@ -3,6 +3,7 @@ import { History, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
   createAdminDataSource,
+  fetchAdminDataSourceFormOptions,
   fetchAdminDataSources,
   fetchAdminIngestionJobs,
   requestAdminDataSourceSync,
@@ -13,6 +14,8 @@ import { useFragment } from '../generated/fragment-masking';
 import {
   DataSourceFieldsFragmentDoc,
   IngestionJobFieldsFragmentDoc,
+  UserFieldsFragmentDoc,
+  WorkspaceFieldsFragmentDoc,
   type DataSourceFieldsFragment
 } from '../generated/graphql';
 import DataSourceFormDialog, { type DataSourceFormValues } from './DataSourceFormDialog';
@@ -31,6 +34,13 @@ function DataSourcesPage() {
   });
   const dataSources = useFragment(DataSourceFieldsFragmentDoc, dataSourcesQuery.data?.dataSources.items ?? []);
   const selectedDataSource = dataSources.find((dataSource) => dataSource.id === selectedJobSourceId) ?? null;
+  const formOptionsQuery = useQuery({
+    enabled: isFormOpen,
+    queryKey: ['admin-data-source-form-options'],
+    queryFn: fetchAdminDataSourceFormOptions
+  });
+  const users = useFragment(UserFieldsFragmentDoc, formOptionsQuery.data?.users.items ?? []);
+  const workspaces = useFragment(WorkspaceFieldsFragmentDoc, formOptionsQuery.data?.workspaces.items ?? []);
   const jobsQuery = useQuery({
     enabled: Boolean(selectedJobSourceId),
     queryKey: ['admin-ingestion-jobs', selectedJobSourceId],
@@ -50,6 +60,7 @@ function DataSourcesPage() {
       if (editingDataSource) {
         return await updateAdminDataSource(editingDataSource.id, {
           name: values.name,
+          notionRootPageId: editingDataSource.type === 'NOTION' ? values.notionRootPageId : undefined,
           ownerUserId: values.ownerUserId,
           status: values.status,
           syncMode: values.syncMode,
@@ -59,6 +70,7 @@ function DataSourcesPage() {
 
       return await createAdminDataSource({
         name: values.name,
+        notionRootPageId: values.type === 'NOTION' ? values.notionRootPageId : undefined,
         ownerUserId: values.ownerUserId,
         syncMode: values.syncMode,
         type: values.type,
@@ -243,6 +255,8 @@ function DataSourcesPage() {
         <DataSourceFormDialog
           dataSource={editingDataSource}
           isSubmitting={saveDataSourceMutation.isPending}
+          users={users}
+          workspaces={workspaces}
           onClose={closeForm}
           onSubmit={(values) => saveDataSourceMutation.mutate(values)}
         />

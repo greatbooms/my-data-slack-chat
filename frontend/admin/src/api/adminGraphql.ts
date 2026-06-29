@@ -2,8 +2,16 @@ import { GraphQLClient, type RequestOptions } from 'graphql-request';
 import type { TypedDocumentNode } from '@graphql-typed-document-node/core';
 import {
   AdminDataSourcesDocument,
+  AdminDataSourceFormOptionsDocument,
+  type AdminDataSourceFormOptionsQuery,
   AdminIngestionJobsDocument,
   AdminUsersDocument,
+  AdminWorkspaceManagementDocument,
+  type AdminWorkspaceManagementQuery,
+  type AdminWorkspaceManagementQueryVariables,
+  AdminWorkspacesDocument,
+  type AdminWorkspacesQuery,
+  type AdminWorkspacesQueryVariables,
   CreateDataSourceDocument,
   type CreateDataSourceInput,
   type CreateDataSourceMutation,
@@ -12,6 +20,10 @@ import {
   type CreateUserInput,
   type CreateUserMutation,
   type CreateUserMutationVariables,
+  CreateWorkspaceDocument,
+  type CreateWorkspaceInput,
+  type CreateWorkspaceMutation,
+  type CreateWorkspaceMutationVariables,
   type AdminDataSourcesQuery,
   type AdminIngestionJobsQuery,
   type AdminIngestionJobsQueryVariables,
@@ -28,12 +40,18 @@ import {
   RestoreUserDocument,
   type RestoreUserMutation,
   type RestoreUserMutationVariables,
+  RestoreWorkspaceDocument,
+  type RestoreWorkspaceMutation,
+  type RestoreWorkspaceMutationVariables,
   SoftDeleteDataSourceDocument,
   type SoftDeleteDataSourceMutation,
   type SoftDeleteDataSourceMutationVariables,
   SoftDeleteUserDocument,
   type SoftDeleteUserMutation,
   type SoftDeleteUserMutationVariables,
+  SoftDeleteWorkspaceDocument,
+  type SoftDeleteWorkspaceMutation,
+  type SoftDeleteWorkspaceMutationVariables,
   UpdateDataSourceDocument,
   type UpdateDataSourceInput,
   type UpdateDataSourceMutation,
@@ -42,10 +60,15 @@ import {
   type UpdateUserInput,
   type UpdateUserMutation,
   type UpdateUserMutationVariables,
+  UpdateWorkspaceDocument,
+  type UpdateWorkspaceInput,
+  type UpdateWorkspaceMutation,
+  type UpdateWorkspaceMutationVariables,
   ViewerAndDashboardDocument,
   type ViewerAndDashboardQuery
 } from '../generated/graphql';
-import { fetchCsrfToken } from './csrf';
+import { isAuthenticationFailureStatus, redirectToAdminLogin } from './authRedirect';
+import { clearCsrfToken, fetchCsrfToken } from './csrf';
 
 export const adminGraphqlClient = new GraphQLClient(resolveSameOriginUrl('/admin/graphql'), {
   credentials: 'include'
@@ -57,6 +80,22 @@ export async function fetchViewerAndDashboard(): Promise<ViewerAndDashboardQuery
 
 export async function fetchAdminUsers(): Promise<AdminUsersQuery> {
   return await requestAdminGraphql(AdminUsersDocument);
+}
+
+export async function fetchAdminWorkspaces(includeDeleted = true): Promise<AdminWorkspacesQuery> {
+  return await requestAdminGraphql<AdminWorkspacesQuery, AdminWorkspacesQueryVariables>(
+    AdminWorkspacesDocument,
+    { includeDeleted }
+  );
+}
+
+export async function fetchAdminWorkspaceManagement(
+  includeDeleted = true
+): Promise<AdminWorkspaceManagementQuery> {
+  return await requestAdminGraphql<AdminWorkspaceManagementQuery, AdminWorkspaceManagementQueryVariables>(
+    AdminWorkspaceManagementDocument,
+    { includeDeleted }
+  );
 }
 
 export async function createAdminUser(input: CreateUserInput): Promise<CreateUserMutation> {
@@ -107,8 +146,45 @@ export async function resetAdminUserPassword(
   );
 }
 
+export async function createAdminWorkspace(
+  input: CreateWorkspaceInput
+): Promise<CreateWorkspaceMutation> {
+  return await requestAdminGraphql<CreateWorkspaceMutation, CreateWorkspaceMutationVariables>(
+    CreateWorkspaceDocument,
+    { input }
+  );
+}
+
+export async function updateAdminWorkspace(
+  id: string,
+  input: UpdateWorkspaceInput
+): Promise<UpdateWorkspaceMutation> {
+  return await requestAdminGraphql<UpdateWorkspaceMutation, UpdateWorkspaceMutationVariables>(
+    UpdateWorkspaceDocument,
+    { id, input }
+  );
+}
+
+export async function softDeleteAdminWorkspace(id: string): Promise<SoftDeleteWorkspaceMutation> {
+  return await requestAdminGraphql<SoftDeleteWorkspaceMutation, SoftDeleteWorkspaceMutationVariables>(
+    SoftDeleteWorkspaceDocument,
+    { id }
+  );
+}
+
+export async function restoreAdminWorkspace(id: string): Promise<RestoreWorkspaceMutation> {
+  return await requestAdminGraphql<RestoreWorkspaceMutation, RestoreWorkspaceMutationVariables>(
+    RestoreWorkspaceDocument,
+    { id }
+  );
+}
+
 export async function fetchAdminDataSources(): Promise<AdminDataSourcesQuery> {
   return await requestAdminGraphql(AdminDataSourcesDocument);
+}
+
+export async function fetchAdminDataSourceFormOptions(): Promise<AdminDataSourceFormOptionsQuery> {
+  return await requestAdminGraphql(AdminDataSourceFormOptionsDocument);
 }
 
 export async function createAdminDataSource(
@@ -167,10 +243,27 @@ async function requestAdminGraphql<TResult, TVariables extends Record<string, un
     }
   } as unknown as RequestOptions<TVariables, TResult>;
 
-  return await adminGraphqlClient.request<TResult, TVariables>(requestOptions);
+  try {
+    return await adminGraphqlClient.request<TResult, TVariables>(requestOptions);
+  } catch (error) {
+    if (isAuthenticationFailureStatus(extractResponseStatus(error))) {
+      clearCsrfToken();
+      redirectToAdminLogin();
+    }
+    throw error;
+  }
 }
 
 function resolveSameOriginUrl(path: string) {
   const origin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
   return new URL(path, origin).toString();
+}
+
+function extractResponseStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return undefined;
+  }
+
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === 'number' ? response.status : undefined;
 }

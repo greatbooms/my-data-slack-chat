@@ -44,9 +44,13 @@ public class PgVectorSearchRepository {
                 FROM document_embeddings e
                 JOIN document_chunks c ON c.id = e.chunk_id
                 JOIN external_documents d ON d.id = c.document_id
+                JOIN data_sources ds ON ds.id = d.data_source_id
+                JOIN workspaces w ON w.id = d.workspace_id
                 WHERE e.embedding_model = ?
                   AND d.workspace_id = ?
                   AND d.deleted_at IS NULL
+                  AND ds.deleted_at IS NULL
+                  AND w.deleted_at IS NULL
                   AND EXISTS (
                     SELECT 1
                     FROM document_acl_entries acl

@@ -1,5 +1,6 @@
 package com.mydata.admin.auth;
 
+import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.support.PostgresIntegrationTest;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
@@ -7,6 +8,7 @@ import com.mydata.users.UserRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AdminBootstrapInitializerTest extends PostgresIntegrationTest {
     @Autowired UserRepository users;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired AdminWorkspaceService adminWorkspaces;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @Test
     void createsBootstrapAdminWhenNoNonDeletedAdminExists() throws Exception {
@@ -32,6 +36,7 @@ class AdminBootstrapInitializerTest extends PostgresIntegrationTest {
         assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
         assertThat(admin.getDisplayName()).isEqualTo("관리자");
         assertThat(passwordEncoder.matches("secret1234", admin.getPasswordHash())).isTrue();
+        assertThat(personalWorkspaceCount(admin)).isEqualTo(1);
     }
 
     @Test
@@ -50,6 +55,7 @@ class AdminBootstrapInitializerTest extends PostgresIntegrationTest {
 
         assertThat(users.findByEmailAndDeletedAtIsNull("admin@example.com")).isEmpty();
         assertThat(nonDeletedAdminCount()).isEqualTo(1);
+        assertThat(personalWorkspaceCount(existingAdmin)).isEqualTo(1);
     }
 
     @Test
@@ -70,6 +76,7 @@ class AdminBootstrapInitializerTest extends PostgresIntegrationTest {
         assertThat(admin.getId()).isEqualTo(deletedAdmin.getId());
         assertThat(admin.getDisplayName()).isEqualTo("관리자");
         assertThat(passwordEncoder.matches("secret1234", admin.getPasswordHash())).isTrue();
+        assertThat(personalWorkspaceCount(admin)).isEqualTo(1);
     }
 
     @Test
@@ -99,12 +106,22 @@ class AdminBootstrapInitializerTest extends PostgresIntegrationTest {
     }
 
     private AdminBootstrapInitializer initializer(AdminBootstrapProperties properties, MockEnvironment environment) {
-        return new AdminBootstrapInitializer(users, passwordEncoder, properties, environment);
+        return new AdminBootstrapInitializer(users, passwordEncoder, properties, environment, adminWorkspaces);
     }
 
     private long nonDeletedAdminCount() {
         return users.findByDeletedAtIsNullOrderByCreatedAtDesc().stream()
             .filter(user -> user.getRole() == UserRole.ADMIN)
             .count();
+    }
+
+    private Integer personalWorkspaceCount(UserEntity user) {
+        return jdbcTemplate.queryForObject("""
+            SELECT count(*)
+            FROM workspaces
+            WHERE owner_user_id = ?::uuid
+              AND name = 'Personal'
+              AND deleted_at IS NULL
+            """, Integer.class, user.getId());
     }
 }

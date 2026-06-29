@@ -2,7 +2,11 @@ package com.mydata.admin.datasources;
 
 import com.mydata.auth.Permission;
 import com.mydata.auth.PrincipalKeys;
+import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
+import com.mydata.datasources.DataSourceStatus;
+import com.mydata.datasources.DataSourceType;
+import com.mydata.datasources.SyncMode;
 import com.mydata.support.PostgresIntegrationTest;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
@@ -159,6 +163,108 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             """)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.dataSources.items[*].name").value(not(hasItem("Workspace notes"))));
+    }
+
+    @Test
+    void createsNotionDataSourceWithRootPageConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Notion wiki",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "root-page-id"
+              }) {
+                id
+                type
+                notionRootPageId
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.type").value("NOTION"))
+            .andExpect(jsonPath("$.data.createDataSource.notionRootPageId").value("root-page-id"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("notionRootPageId")).isEqualTo("root-page-id");
+        assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void listsWorkspaceOptionsForDataSourceForm() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("workspace-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("workspace-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            query {
+              workspaces {
+                totalCount
+                items {
+                  id
+                  ownerUserId
+                  name
+                }
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.workspaces.items[?(@.id == '%s')].name".formatted(workspace.getId()))
+                .value(hasItem("Personal")))
+            .andExpect(jsonPath("$.data.workspaces.items[?(@.id == '%s')].ownerUserId".formatted(workspace.getId()))
+                .value(hasItem(owner.getId().toString())))
+            .andExpect(jsonPath("$.data.workspaces.totalCount").isNumber());
+    }
+
+    @Test
+    void excludesDataSourcesFromDeletedWorkspaces() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("archived-workspace-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Archived workspace"));
+        DataSourceEntity dataSource = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Archived workspace notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        workspace.markDeleted();
+        workspaces.saveAndFlush(workspace);
+        MockHttpSession adminSession = loginAs("archived-workspace-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            query {
+              dataSources {
+                items {
+                  name
+                }
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.dataSources.items[*].name")
+                .value(not(hasItem("Archived workspace notes"))));
+
+        graphQl(adminSession, """
+            mutation {
+              requestDataSourceSync(id: "%s") {
+                id
+              }
+            }
+            """.formatted(dataSource.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message").value("데이터소스를 찾을 수 없습니다"));
     }
 
     private MockHttpSession loginAs(String email) throws Exception {

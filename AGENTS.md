@@ -35,7 +35,13 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 
 - 새 기능이나 수정 작업을 시작할 때는 먼저 `main` 브랜치를 최신 원격 상태로 pull 받습니다.
 - 실제 작업은 최신 `main` 기준에서 `codex/` 접두사의 작업 브랜치를 새로 만든 뒤 진행합니다.
+- 브랜치 이름은 `codex/<type>/<short-kebab-summary>` 형식을 사용합니다.
+  - `<type>`은 Conventional Commits 타입을 따릅니다. 예: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`
+  - `<short-kebab-summary>`는 작업 내용을 영문 kebab-case로 짧게 씁니다. 예: `codex/fix/workspace-delete-scope`
 - 이미 진행 중인 작업 브랜치가 있다면, 새 작업과 섞이지 않는지 확인한 뒤 계속 사용할지 새 브랜치를 만들지 판단합니다.
+- 커밋 제목은 Conventional Commits 형식을 따릅니다. 예: `fix(workspaces): exclude deleted workspace data`
+- 커밋은 빈 본문 없이 작성합니다. 본문에는 최소한 작업 내용과 검증 내용을 적습니다.
+- PR 제목도 Conventional Commits 의미가 드러나게 작성하고, PR 본문에는 작업 내용, 영향 범위, 검증 결과를 포함합니다.
 - 코드 탐색을 시작할 때는 현재 디렉터리를 Serena 프로젝트로 활성화하고 Serena initial instructions를 먼저 읽습니다.
 - 코드 구조 탐색은 `grep` 같은 단순 텍스트 검색보다 Serena symbolic tools를 우선 사용합니다.
 - 필요한 심볼이나 관계를 Serena로 좁힌 뒤, 부족한 경우에만 `rg` 같은 텍스트 검색을 보조로 사용합니다.

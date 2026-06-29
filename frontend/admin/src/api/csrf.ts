@@ -1,3 +1,5 @@
+import { isAuthenticationFailureStatus, redirectToAdminLogin } from './authRedirect';
+
 export type CsrfToken = {
   headerName: string;
   parameterName: string;
@@ -15,6 +17,10 @@ export async function fetchCsrfToken(): Promise<CsrfToken> {
     credentials: 'include'
   });
   if (!response.ok) {
+    if (isAuthenticationFailureStatus(response.status)) {
+      clearCsrfToken();
+      redirectToAdminLogin();
+    }
     throw new Error('CSRF 토큰을 가져오지 못했습니다');
   }
 

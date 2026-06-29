@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Bean;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,6 +38,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
+    @Autowired IngestionCommandService ingestionCommands;
+    @Autowired IngestionJobScheduler ingestionJobScheduler;
     @Autowired IngestionWorker worker;
     @Autowired IngestionPipelineService pipeline;
     @Autowired ExternalDocumentRepository documents;
@@ -92,6 +95,36 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 assertThat(chunk.getTokenCount()).isEqualTo(8);
             });
         assertThat(reloadedJob.getStatus()).isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(dataSources.findById(dataSource.getId()).orElseThrow().getLastSyncedAt())
+            .isNotNull();
+    }
+
+    @Test
+    void schedulerRunsPendingManualSyncJobs() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity user = users.save(UserEntity.create("scheduled-local-owner-" + suffix + "@example.com", "Local Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Scheduled local workspace"));
+        DataSourceEntity dataSource = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Scheduled local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        dataSource.putConfig("externalId", "scheduled-note");
+        dataSource.putConfig("title", "Scheduled note");
+        dataSource.putConfig("content", "scheduled content");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+        IngestionJobEntity job = ingestionCommands.requestManualSync(dataSource.getId(), user.getId());
+
+        int processedJobCount = ingestionJobScheduler.runPendingJobsNow();
+
+        assertThat(processedJobCount).isGreaterThanOrEqualTo(1);
+        assertThat(ingestionJobs.findById(job.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "scheduled-note"))
+            .isPresent();
     }
 
     @Test

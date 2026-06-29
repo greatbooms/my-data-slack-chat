@@ -3,6 +3,7 @@ package com.mydata.admin.users;
 import com.mydata.admin.users.AdminUserInputs.CreateUserInput;
 import com.mydata.admin.users.AdminUserInputs.ResetUserPasswordInput;
 import com.mydata.admin.users.AdminUserInputs.UpdateUserInput;
+import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
 import com.mydata.users.UserRole;
@@ -19,10 +20,16 @@ import java.util.UUID;
 public class AdminUserService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
+    private final AdminWorkspaceService adminWorkspaces;
 
-    public AdminUserService(UserRepository users, PasswordEncoder passwordEncoder) {
+    public AdminUserService(
+        UserRepository users,
+        PasswordEncoder passwordEncoder,
+        AdminWorkspaceService adminWorkspaces
+    ) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
+        this.adminWorkspaces = adminWorkspaces;
     }
 
     @Transactional(readOnly = true)
@@ -52,7 +59,9 @@ public class AdminUserService {
         user.changeRole(input.role() == null ? UserRole.USER : input.role());
         user.changeStatus(UserStatus.ACTIVE);
         user.updatePasswordHash(passwordEncoder.encode(requireText(input.password(), "password")));
-        return AdminUserPayload.from(users.save(user));
+        UserEntity savedUser = users.save(user);
+        adminWorkspaces.ensureDefaultWorkspace(savedUser);
+        return AdminUserPayload.from(savedUser);
     }
 
     @Transactional
