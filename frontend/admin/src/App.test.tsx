@@ -28,6 +28,7 @@ describe('관리자 앱 인증 흐름', () => {
   afterEach(() => {
     cleanup();
     clearCsrfToken();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -336,6 +337,103 @@ describe('관리자 앱 인증 흐름', () => {
       .toContain('RestoreWorkspace');
   });
 
+  it('외부 계정 화면에서 Slack 매핑을 생성하고 삭제한다', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const owner = {
+      id: 'user-id',
+      email: 'owner@example.com',
+      displayName: '데이터 오너',
+      role: 'USER',
+      status: 'ACTIVE',
+      deletedAt: null
+    };
+    const workspace = workspaceFixture({ id: 'workspace-id', name: 'Personal' });
+    const identity = externalIdentityFixture({
+      id: 'identity-id',
+      workspaceId: 'workspace-id',
+      userId: 'user-id',
+      externalWorkspaceId: 'T123',
+      externalUserId: 'U123',
+      email: 'slack@example.com',
+      displayName: 'Slack Person'
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminExternalIdentityManagementResponse({
+        externalIdentities: [],
+        users: [owner],
+        workspaces: [workspace]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('createExternalIdentity', identity))
+      .mockResolvedValueOnce(adminExternalIdentityManagementResponse({
+        externalIdentities: [identity],
+        users: [owner],
+        workspaces: [workspace]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('deleteExternalIdentity', true))
+      .mockResolvedValueOnce(adminExternalIdentityManagementResponse({
+        externalIdentities: [],
+        users: [owner],
+        workspaces: [workspace]
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/external-identities');
+
+    expect(await screen.findByText('외부 계정 매핑이 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Slack 매핑 추가' }));
+    expect(screen.getByLabelText('Slack 팀 ID 도움말')).toHaveAttribute(
+      'aria-describedby',
+      'slack-team-id-help'
+    );
+    expect(screen.getByText(/Slack 웹에서 아무 채널에 들어간 뒤 주소창의/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Slack 유저 ID 도움말')).toHaveAttribute(
+      'aria-describedby',
+      'slack-user-id-help'
+    );
+    expect(screen.getByText(/사용자 프로필의 멤버 ID 복사/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Slack 팀 ID'), {
+      target: { value: 'T123' }
+    });
+    fireEvent.change(screen.getByLabelText('Slack 유저 ID'), {
+      target: { value: 'U123' }
+    });
+    fireEvent.change(screen.getByLabelText('이메일'), {
+      target: { value: 'slack@example.com' }
+    });
+    fireEvent.change(screen.getByLabelText('표시 이름'), {
+      target: { value: 'Slack Person' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(await screen.findByText('T123')).toBeVisible();
+    expect(screen.getByText('U123')).toBeVisible();
+    expect(screen.getByText('데이터 오너 · owner@example.com')).toBeVisible();
+    expect(screen.getByText('Personal')).toBeVisible();
+    const createBody = JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string);
+    expect(createBody.query).toContain('CreateExternalIdentity');
+    expect(createBody.variables.input).toMatchObject({
+      provider: 'SLACK',
+      workspaceId: 'workspace-id',
+      userId: 'user-id',
+      externalWorkspaceId: 'T123',
+      externalUserId: 'U123',
+      email: 'slack@example.com',
+      displayName: 'Slack Person'
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Slack Person 삭제' }));
+
+    expect(await screen.findByText('외부 계정 매핑이 없습니다.')).toBeVisible();
+    expect(confirmSpy).toHaveBeenCalledWith('이 외부 계정 매핑을 삭제할까요?');
+    expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query)
+      .toContain('DeleteExternalIdentity');
+  });
+
   it('데이터소스 화면에서 목록, 수동 수집, 수집 기록을 관리한다', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
@@ -573,6 +671,29 @@ function adminWorkspaceManagementResponse(options: {
   });
 }
 
+function adminExternalIdentityManagementResponse(options: {
+  externalIdentities: Array<Record<string, unknown>>;
+  users: Array<Record<string, unknown>>;
+  workspaces: Array<Record<string, unknown>>;
+}) {
+  return jsonResponse({
+    data: {
+      externalIdentities: {
+        totalCount: options.externalIdentities.length,
+        items: options.externalIdentities
+      },
+      users: {
+        totalCount: options.users.length,
+        items: options.users
+      },
+      workspaces: {
+        totalCount: options.workspaces.length,
+        items: options.workspaces
+      }
+    }
+  });
+}
+
 function graphqlResponse(field: string, value: unknown) {
   return jsonResponse({
     data: {
@@ -594,6 +715,21 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     notionRootPageId: null,
     lastSyncedAt: null,
     deletedAt: null,
+    ...overrides
+  };
+}
+
+function externalIdentityFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'identity-id',
+    workspaceId: 'workspace-id',
+    userId: 'user-id',
+    provider: 'SLACK',
+    externalWorkspaceId: 'T123',
+    externalUserId: 'U123',
+    email: 'slack@example.com',
+    displayName: 'Slack Person',
+    principalKey: 'SLACK_USER:T123:U123',
     ...overrides
   };
 }

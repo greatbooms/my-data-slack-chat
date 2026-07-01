@@ -6,6 +6,7 @@ type Query {
   workspaces(includeDeleted: Boolean = false): WorkspacePage!
   dataSources: DataSourcePage!
   dataSource(id: ID!): DataSource
+  externalIdentities: ExternalIdentityPage!
   ingestionJobs(dataSourceId: ID!, first: Int = 20): [IngestionJob!]!
 }
 
@@ -24,6 +25,9 @@ type Mutation {
   updateDataSource(id: ID!, input: UpdateDataSourceInput!): DataSource!
   softDeleteDataSource(id: ID!): DataSource!
   requestDataSourceSync(id: ID!): IngestionJob!
+  createExternalIdentity(input: CreateExternalIdentityInput!): ExternalIdentity!
+  updateExternalIdentity(id: ID!, input: UpdateExternalIdentityInput!): ExternalIdentity!
+  deleteExternalIdentity(id: ID!): Boolean!
 }
 
 type AdminViewer {
@@ -75,6 +79,27 @@ type Workspace {
   deletedAt: String
 }
 
+enum ExternalIdentityProvider {
+  SLACK
+}
+
+type ExternalIdentityPage {
+  items: [ExternalIdentity!]!
+  totalCount: Int!
+}
+
+type ExternalIdentity {
+  id: ID!
+  workspaceId: ID!
+  userId: ID!
+  provider: ExternalIdentityProvider!
+  externalWorkspaceId: String!
+  externalUserId: String!
+  email: String
+  displayName: String
+  principalKey: String!
+}
+
 input CreateUserInput {
   email: String!
   displayName: String!
@@ -100,6 +125,25 @@ input CreateWorkspaceInput {
 input UpdateWorkspaceInput {
   ownerUserId: ID
   name: String
+}
+
+input CreateExternalIdentityInput {
+  provider: ExternalIdentityProvider!
+  workspaceId: ID!
+  userId: ID!
+  externalWorkspaceId: String!
+  externalUserId: String!
+  email: String
+  displayName: String
+}
+
+input UpdateExternalIdentityInput {
+  workspaceId: ID!
+  userId: ID!
+  externalWorkspaceId: String!
+  externalUserId: String!
+  email: String
+  displayName: String
 }
 
 type DataSourcePage {

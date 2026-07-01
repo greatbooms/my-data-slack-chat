@@ -1,6 +1,8 @@
 import { GraphQLClient, type RequestOptions } from 'graphql-request';
 import type { TypedDocumentNode } from '@graphql-typed-document-node/core';
 import {
+  AdminExternalIdentityManagementDocument,
+  type AdminExternalIdentityManagementQuery,
   AdminDataSourcesDocument,
   AdminDataSourceFormOptionsDocument,
   type AdminDataSourceFormOptionsQuery,
@@ -16,6 +18,10 @@ import {
   type CreateDataSourceInput,
   type CreateDataSourceMutation,
   type CreateDataSourceMutationVariables,
+  CreateExternalIdentityDocument,
+  type CreateExternalIdentityInput,
+  type CreateExternalIdentityMutation,
+  type CreateExternalIdentityMutationVariables,
   CreateUserDocument,
   type CreateUserInput,
   type CreateUserMutation,
@@ -24,6 +30,9 @@ import {
   type CreateWorkspaceInput,
   type CreateWorkspaceMutation,
   type CreateWorkspaceMutationVariables,
+  DeleteExternalIdentityDocument,
+  type DeleteExternalIdentityMutation,
+  type DeleteExternalIdentityMutationVariables,
   type AdminDataSourcesQuery,
   type AdminIngestionJobsQuery,
   type AdminIngestionJobsQueryVariables,
@@ -56,6 +65,10 @@ import {
   type UpdateDataSourceInput,
   type UpdateDataSourceMutation,
   type UpdateDataSourceMutationVariables,
+  UpdateExternalIdentityDocument,
+  type UpdateExternalIdentityInput,
+  type UpdateExternalIdentityMutation,
+  type UpdateExternalIdentityMutationVariables,
   UpdateUserDocument,
   type UpdateUserInput,
   type UpdateUserMutation,
@@ -96,6 +109,10 @@ export async function fetchAdminWorkspaceManagement(
     AdminWorkspaceManagementDocument,
     { includeDeleted }
   );
+}
+
+export async function fetchAdminExternalIdentityManagement(): Promise<AdminExternalIdentityManagementQuery> {
+  return await requestAdminGraphql(AdminExternalIdentityManagementDocument);
 }
 
 export async function createAdminUser(input: CreateUserInput): Promise<CreateUserMutation> {
@@ -175,6 +192,32 @@ export async function softDeleteAdminWorkspace(id: string): Promise<SoftDeleteWo
 export async function restoreAdminWorkspace(id: string): Promise<RestoreWorkspaceMutation> {
   return await requestAdminGraphql<RestoreWorkspaceMutation, RestoreWorkspaceMutationVariables>(
     RestoreWorkspaceDocument,
+    { id }
+  );
+}
+
+export async function createAdminExternalIdentity(
+  input: CreateExternalIdentityInput
+): Promise<CreateExternalIdentityMutation> {
+  return await requestAdminGraphql<CreateExternalIdentityMutation, CreateExternalIdentityMutationVariables>(
+    CreateExternalIdentityDocument,
+    { input }
+  );
+}
+
+export async function updateAdminExternalIdentity(
+  id: string,
+  input: UpdateExternalIdentityInput
+): Promise<UpdateExternalIdentityMutation> {
+  return await requestAdminGraphql<UpdateExternalIdentityMutation, UpdateExternalIdentityMutationVariables>(
+    UpdateExternalIdentityDocument,
+    { id, input }
+  );
+}
+
+export async function deleteAdminExternalIdentity(id: string): Promise<DeleteExternalIdentityMutation> {
+  return await requestAdminGraphql<DeleteExternalIdentityMutation, DeleteExternalIdentityMutationVariables>(
+    DeleteExternalIdentityDocument,
     { id }
   );
 }
