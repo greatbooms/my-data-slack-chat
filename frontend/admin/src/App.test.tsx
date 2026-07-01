@@ -35,11 +35,28 @@ describe('관리자 앱 인증 흐름', () => {
     renderApp('/login');
 
     expect(screen.getByRole('heading', { name: '관리자 로그인' })).toBeVisible();
-    expect(screen.getByLabelText('이메일')).toBeVisible();
-    expect(screen.getByLabelText('비밀번호')).toBeVisible();
+    const emailInput = screen.getByLabelText('이메일');
+    const passwordInput = screen.getByLabelText('비밀번호');
+    const loginForm = emailInput.closest('form');
+
+    expect(loginForm).toHaveAttribute('method', 'post');
+    expect(loginForm).toHaveAttribute('action', '/admin/auth/login');
+    expect(loginForm).toHaveAttribute('autocomplete', 'on');
+    expect(emailInput).toBeVisible();
+    expect(emailInput).toHaveAttribute('id', 'admin-username');
+    expect(emailInput).toHaveAttribute('name', 'username');
+    expect(emailInput).toHaveAttribute('autocomplete', 'username');
+    expect(emailInput).toBeRequired();
+    expect(passwordInput).toBeVisible();
+    expect(passwordInput).toHaveAttribute('id', 'admin-password');
+    expect(passwordInput).toHaveAttribute('name', 'password');
+    expect(passwordInput).toHaveAttribute('autocomplete', 'current-password');
+    expect(passwordInput).toBeRequired();
   });
 
   it('CSRF 토큰으로 로그인 요청을 보내고 성공하면 대시보드로 이동한다', async () => {
+    const assignSpy = vi.fn();
+    const restoreLocation = stubLocationAssign(assignSpy, '/admin-ui/login');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
         headerName: 'X-CSRF-TOKEN',
@@ -54,35 +71,39 @@ describe('관리자 앱 인증 흐름', () => {
       }));
     vi.stubGlobal('fetch', fetchMock);
 
-    renderApp('/login');
+    try {
+      renderApp('/login');
 
-    fireEvent.change(screen.getByLabelText('이메일'), {
-      target: { value: 'admin@example.com' }
-    });
-    fireEvent.change(screen.getByLabelText('비밀번호'), {
-      target: { value: 'secret1234' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: '로그인' }));
+      fireEvent.change(screen.getByLabelText('이메일'), {
+        target: { value: 'admin@example.com' }
+      });
+      fireEvent.change(screen.getByLabelText('비밀번호'), {
+        target: { value: 'secret1234' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: '로그인' }));
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/admin/auth/csrf', {
-      credentials: 'include'
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/admin/auth/login', {
-      body: JSON.stringify({
-        email: 'admin@example.com',
-        password: 'secret1234'
-      }),
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': 'csrf-token'
-      },
-      method: 'POST'
-    });
-    expect(await screen.findByRole('heading', { name: '개인 데이터 수집과 권한 관리' })).toBeVisible();
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      });
+      expect(fetchMock).toHaveBeenNthCalledWith(1, '/admin/auth/csrf', {
+        credentials: 'include'
+      });
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/admin/auth/login', {
+        body: JSON.stringify({
+          email: 'admin@example.com',
+          password: 'secret1234'
+        }),
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': 'csrf-token'
+        },
+        method: 'POST'
+      });
+      expect(assignSpy).toHaveBeenCalledWith('/admin-ui/');
+    } finally {
+      restoreLocation();
+    }
   });
 
   it('대시보드에서 관리자 정보와 요약 지표를 GraphQL로 불러온다', async () => {

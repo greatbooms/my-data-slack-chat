@@ -1,21 +1,19 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { type FormEvent, useState } from 'react';
 import { loginAdmin } from '../api/auth';
 
 function LoginPage() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
       await loginAdmin(email, password);
-      navigate('/', { replace: true });
+      window.location.assign('/admin-ui/');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다');
     } finally {
@@ -30,24 +28,37 @@ function LoginPage() {
           <strong>My Data</strong>
           <span>관리자</span>
         </div>
-        <form className="login-form" onSubmit={handleSubmit}>
+        <form
+          action="/admin/auth/login"
+          autoComplete="on"
+          className="login-form"
+          method="post"
+          onSubmit={handleSubmit}
+        >
           <h1>관리자 로그인</h1>
-          <label>
+          <label htmlFor="admin-username">
             이메일
             <input
-              name="email"
-              type="email"
+              autoCapitalize="none"
               autoComplete="username"
+              id="admin-username"
+              inputMode="email"
+              name="username"
+              required
+              spellCheck={false}
+              type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
           </label>
-          <label>
+          <label htmlFor="admin-password">
             비밀번호
             <input
-              name="password"
-              type="password"
               autoComplete="current-password"
+              id="admin-password"
+              name="password"
+              required
+              type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
