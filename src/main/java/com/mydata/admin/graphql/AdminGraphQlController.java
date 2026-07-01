@@ -7,6 +7,11 @@ import com.mydata.admin.datasources.AdminDataSourcePagePayload;
 import com.mydata.admin.datasources.AdminDataSourcePayload;
 import com.mydata.admin.datasources.AdminDataSourceService;
 import com.mydata.admin.datasources.AdminIngestionJobPayload;
+import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.CreateExternalIdentityInput;
+import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.UpdateExternalIdentityInput;
+import com.mydata.admin.externalidentities.AdminExternalIdentityPagePayload;
+import com.mydata.admin.externalidentities.AdminExternalIdentityPayload;
+import com.mydata.admin.externalidentities.AdminExternalIdentityService;
 import com.mydata.admin.users.AdminUserInputs.CreateUserInput;
 import com.mydata.admin.users.AdminUserInputs.ResetUserPasswordInput;
 import com.mydata.admin.users.AdminUserInputs.UpdateUserInput;
@@ -42,6 +47,7 @@ public class AdminGraphQlController {
     private final AdminUserService adminUsers;
     private final AdminWorkspaceService adminWorkspaces;
     private final AdminDataSourceService adminDataSources;
+    private final AdminExternalIdentityService adminExternalIdentities;
 
     public AdminGraphQlController(
         UserRepository users,
@@ -49,7 +55,8 @@ public class AdminGraphQlController {
         IngestionJobRepository ingestionJobs,
         AdminUserService adminUsers,
         AdminWorkspaceService adminWorkspaces,
-        AdminDataSourceService adminDataSources
+        AdminDataSourceService adminDataSources,
+        AdminExternalIdentityService adminExternalIdentities
     ) {
         this.users = users;
         this.dataSources = dataSources;
@@ -57,6 +64,7 @@ public class AdminGraphQlController {
         this.adminUsers = adminUsers;
         this.adminWorkspaces = adminWorkspaces;
         this.adminDataSources = adminDataSources;
+        this.adminExternalIdentities = adminExternalIdentities;
     }
 
     @QueryMapping
@@ -180,6 +188,12 @@ public class AdminGraphQlController {
 
     @QueryMapping
     @PreAuthorize("hasRole('ADMIN')")
+    public AdminExternalIdentityPagePayload externalIdentities() {
+        return adminExternalIdentities.listExternalIdentities();
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public List<AdminIngestionJobPayload> ingestionJobs(
         @Argument String dataSourceId,
         @Argument Integer first
@@ -212,6 +226,27 @@ public class AdminGraphQlController {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminIngestionJobPayload requestDataSourceSync(@Argument String id) {
         return adminDataSources.requestDataSourceSync(id, currentAdmin().getId());
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminExternalIdentityPayload createExternalIdentity(@Argument CreateExternalIdentityInput input) {
+        return adminExternalIdentities.createExternalIdentity(input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminExternalIdentityPayload updateExternalIdentity(
+        @Argument String id,
+        @Argument UpdateExternalIdentityInput input
+    ) {
+        return adminExternalIdentities.updateExternalIdentity(id, input);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public boolean deleteExternalIdentity(@Argument String id) {
+        return adminExternalIdentities.deleteExternalIdentity(id);
     }
 
     private UserEntity currentAdmin() {

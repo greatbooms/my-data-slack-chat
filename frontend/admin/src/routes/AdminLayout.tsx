@@ -1,10 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Building2, Database, LayoutDashboard, RefreshCw, ShieldCheck, Users } from 'lucide-react';
+import { Building2, Database, KeyRound, LayoutDashboard, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 const navigation = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
   { to: '/data-sources', label: '데이터소스', icon: Database },
+  { to: '/external-identities', label: '외부 계정', icon: KeyRound },
   { to: '/workspaces', label: '워크스페이스', icon: Building2 },
   { to: '/users', label: '유저', icon: Users }
 ];

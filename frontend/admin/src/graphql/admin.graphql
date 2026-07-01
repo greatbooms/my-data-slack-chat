@@ -54,6 +54,27 @@ query AdminWorkspaceManagement($includeDeleted: Boolean = true) {
   }
 }
 
+query AdminExternalIdentityManagement {
+  externalIdentities {
+    totalCount
+    items {
+      ...ExternalIdentityFields
+    }
+  }
+  users {
+    totalCount
+    items {
+      ...UserFields
+    }
+  }
+  workspaces {
+    totalCount
+    items {
+      ...WorkspaceFields
+    }
+  }
+}
+
 query AdminDataSourceFormOptions {
   users {
     totalCount
@@ -135,6 +156,22 @@ mutation RestoreWorkspace($id: ID!) {
   }
 }
 
+mutation CreateExternalIdentity($input: CreateExternalIdentityInput!) {
+  createExternalIdentity(input: $input) {
+    ...ExternalIdentityFields
+  }
+}
+
+mutation UpdateExternalIdentity($id: ID!, $input: UpdateExternalIdentityInput!) {
+  updateExternalIdentity(id: $id, input: $input) {
+    ...ExternalIdentityFields
+  }
+}
+
+mutation DeleteExternalIdentity($id: ID!) {
+  deleteExternalIdentity(id: $id)
+}
+
 mutation CreateDataSource($input: CreateDataSourceInput!) {
   createDataSource(input: $input) {
     ...DataSourceFields
@@ -187,6 +224,18 @@ fragment WorkspaceFields on Workspace {
   ownerUserId
   name
   deletedAt
+}
+
+fragment ExternalIdentityFields on ExternalIdentity {
+  id
+  workspaceId
+  userId
+  provider
+  externalWorkspaceId
+  externalUserId
+  email
+  displayName
+  principalKey
 }
 
 fragment IngestionJobFields on IngestionJob {
