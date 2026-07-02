@@ -9,7 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 
 @Configuration
-@EnableConfigurationProperties({LlmProperties.class, OpenAiProperties.class})
+@EnableConfigurationProperties({LlmProperties.class, OpenAiProperties.class, ClaudeProperties.class})
 class LlmConfiguration {
     @Bean
     LlmPromptBuilder llmPromptBuilder(LlmProperties properties) {
@@ -30,6 +30,25 @@ class LlmConfiguration {
             objectMapper,
             openAiProperties.baseUrl(),
             openAiProperties.apiKey(),
+            properties.requestTimeout()
+        );
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "my-data.llm", name = "provider", havingValue = "claude")
+    ClaudeMessagesClient claudeMessagesClient(
+        LlmProperties properties,
+        ClaudeProperties claudeProperties,
+        ObjectMapper objectMapper
+    ) {
+        return new ClaudeMessagesClient(
+            HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .build(),
+            objectMapper,
+            claudeProperties.baseUrl(),
+            claudeProperties.apiKey(),
+            claudeProperties.apiVersion(),
             properties.requestTimeout()
         );
     }

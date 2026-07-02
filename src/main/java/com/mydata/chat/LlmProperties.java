@@ -7,7 +7,6 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "my-data.llm")
 public record LlmProperties(
     String provider,
-    String model,
     int maxInputChunks,
     int maxCharsPerChunk,
     int maxOutputTokens,
@@ -15,7 +14,6 @@ public record LlmProperties(
     Duration requestTimeout
 ) {
     private static final String DEFAULT_PROVIDER = "stub";
-    private static final String DEFAULT_MODEL = "gpt-5.4-mini";
     private static final int DEFAULT_MAX_INPUT_CHUNKS = 5;
     private static final int DEFAULT_MAX_CHARS_PER_CHUNK = 1200;
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 700;
@@ -24,7 +22,6 @@ public record LlmProperties(
 
     public LlmProperties {
         provider = blankToDefault(provider, DEFAULT_PROVIDER);
-        model = blankToDefault(model, DEFAULT_MODEL);
         maxInputChunks = positiveOrDefault(maxInputChunks, DEFAULT_MAX_INPUT_CHUNKS);
         maxCharsPerChunk = positiveOrDefault(maxCharsPerChunk, DEFAULT_MAX_CHARS_PER_CHUNK);
         maxOutputTokens = positiveOrDefault(maxOutputTokens, DEFAULT_MAX_OUTPUT_TOKENS);

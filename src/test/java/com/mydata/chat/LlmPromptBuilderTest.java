@@ -14,7 +14,6 @@ class LlmPromptBuilderTest {
     void buildsGroundedPromptWithLimitedAndTrimmedChunks() {
         LlmProperties properties = new LlmProperties(
             "openai",
-            "gpt-test",
             2,
             12,
             300,
@@ -54,7 +53,6 @@ class LlmPromptBuilderTest {
     void omitsBlankMetadataWithoutBreakingPromptFormat() {
         LlmProperties properties = new LlmProperties(
             "openai",
-            "gpt-test",
             3,
             1200,
             300,
@@ -79,7 +77,6 @@ class LlmPromptBuilderTest {
     void includesConversationContextForThreadFollowUpQuestions() {
         LlmProperties properties = new LlmProperties(
             "openai",
-            "gpt-test",
             3,
             1200,
             300,
@@ -111,7 +108,6 @@ class LlmPromptBuilderTest {
     void includesNotionHierarchyMetadataWhenAvailable() {
         LlmProperties properties = new LlmProperties(
             "openai",
-            "gpt-test",
             3,
             1200,
             300,
