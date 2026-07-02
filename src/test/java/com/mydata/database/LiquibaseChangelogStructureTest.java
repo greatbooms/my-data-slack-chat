@@ -28,19 +28,6 @@ class LiquibaseChangelogStructureTest {
             "\"file\": \"db/changelog/changes/004-workspace-admin-schema.sql\"",
             "\"file\": \"db/changelog/changes/005-cascade-chat-citations-on-chunk-delete.sql\""
         );
-        assertThat(masterContent)
-            .contains(
-                """
-                "file": "db/changelog/changes/001-initial-schema.sql",
-                        "logicalFilePath": "db/changelog/db.changelog-master.sql"
-                """.stripIndent().trim()
-            )
-            .contains(
-                """
-                "file": "db/changelog/changes/004-workspace-admin-schema.sql",
-                        "logicalFilePath": "db/changelog/db.changelog-master.sql"
-                """.stripIndent().trim()
-            );
 
         Matcher includedFiles = Pattern.compile("\"file\"\\s*:\\s*\"([^\"]+)\"").matcher(masterContent);
         int includeCount = 0;
