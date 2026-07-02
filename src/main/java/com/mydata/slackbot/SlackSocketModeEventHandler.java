@@ -1,13 +1,24 @@
 package com.mydata.slackbot;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
 
 @Component
 public class SlackSocketModeEventHandler {
-    private final SlackQuestionEventConsumer questionConsumer;
+    private static final Logger log = LoggerFactory.getLogger(SlackSocketModeEventHandler.class);
 
-    public SlackSocketModeEventHandler(SlackQuestionEventConsumer questionConsumer) {
+    private final SlackQuestionEventConsumer questionConsumer;
+    private final TaskExecutor questionExecutor;
+
+    public SlackSocketModeEventHandler(
+        SlackQuestionEventConsumer questionConsumer,
+        @Qualifier("applicationTaskExecutor") TaskExecutor questionExecutor
+    ) {
         this.questionConsumer = questionConsumer;
+        this.questionExecutor = questionExecutor;
     }
 
     public void handleAppMention(
@@ -61,7 +72,7 @@ public class SlackSocketModeEventHandler {
             return;
         }
 
-        questionConsumer.accept(new SlackQuestionEvent(
+        SlackQuestionEvent event = new SlackQuestionEvent(
             source,
             teamId,
             channelId,
@@ -70,7 +81,20 @@ public class SlackSocketModeEventHandler {
             messageTimestamp,
             threadTimestamp,
             selectThreadId(messageTimestamp, threadTimestamp)
-        ));
+        );
+
+        try {
+            questionExecutor.execute(() -> questionConsumer.accept(event));
+        } catch (RuntimeException exception) {
+            log.warn(
+                "Slack 질문 비동기 작업 등록에 실패했습니다. teamId={}, channelId={}, userId={}, externalThreadId={}",
+                event.teamId(),
+                event.channelId(),
+                event.userId(),
+                event.externalThreadId(),
+                exception
+            );
+        }
     }
 
     private static String selectThreadId(String messageTimestamp, String threadTimestamp) {
