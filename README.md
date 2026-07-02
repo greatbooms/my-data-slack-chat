@@ -101,6 +101,8 @@ vi .env
 | Slack Socket Mode | 로컬에서 Slack 이벤트를 받을 때 | `SLACK_SOCKET_MODE_ENABLED`, `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN` | [Slack 앱 설정](docs/slack-app-setup.md) |
 | Slack HTTP Events API | 공개 HTTPS endpoint로 Slack 이벤트를 받을 때 | `SLACK_HTTP_EVENTS_ENABLED`, `SLACK_SIGNING_SECRET` | [Slack 앱 설정](docs/slack-app-setup.md#http-events-api로-전환할-때) |
 | Notion | Notion 페이지를 수집할 때 | `NOTION_API_TOKEN`, `Notion 루트 페이지 ID` | [Notion Integration 키 발급과 페이지 연결](docs/notion-integration-setup.md) |
+| OpenAI 답변 생성 | Slack 답변을 OpenAI로 생성할 때 | `MY_DATA_LLM_PROVIDER=openai`, `OPENAI_API_KEY` | [.env.example](.env.example) |
+| Claude 답변 생성 | Slack 답변을 Claude로 생성할 때 | `MY_DATA_LLM_PROVIDER=claude`, `CLAUDE_API_KEY` | [.env.example](.env.example) |
 
 ## 관리자 콘솔
 

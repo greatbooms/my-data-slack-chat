@@ -7,25 +7,25 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 @Component
-@ConditionalOnProperty(prefix = "my-data.llm", name = "provider", havingValue = "openai")
-public class OpenAiLlmClient implements LlmClient {
+@ConditionalOnProperty(prefix = "my-data.llm", name = "provider", havingValue = "claude")
+public class ClaudeLlmClient implements LlmClient {
     private static final String NO_EVIDENCE_MESSAGE = "답변할 수 있는 검색 근거를 찾지 못했습니다.";
 
     private final LlmProperties properties;
-    private final OpenAiProperties openAiProperties;
+    private final ClaudeProperties claudeProperties;
     private final LlmPromptBuilder promptBuilder;
-    private final OpenAiResponsesClient responsesClient;
+    private final ClaudeMessagesClient messagesClient;
 
-    public OpenAiLlmClient(
+    public ClaudeLlmClient(
         LlmProperties properties,
-        OpenAiProperties openAiProperties,
+        ClaudeProperties claudeProperties,
         LlmPromptBuilder promptBuilder,
-        OpenAiResponsesClient responsesClient
+        ClaudeMessagesClient messagesClient
     ) {
         this.properties = properties;
-        this.openAiProperties = openAiProperties;
+        this.claudeProperties = claudeProperties;
         this.promptBuilder = promptBuilder;
-        this.responsesClient = responsesClient;
+        this.messagesClient = messagesClient;
     }
 
     @Override
@@ -33,8 +33,8 @@ public class OpenAiLlmClient implements LlmClient {
         if (chunks == null || chunks.isEmpty()) {
             return NO_EVIDENCE_MESSAGE;
         }
-        return responsesClient.createResponse(
-            openAiProperties.model(),
+        return messagesClient.createMessage(
+            claudeProperties.model(),
             promptBuilder.build(question, chunks, contextMessages),
             properties.maxOutputTokens()
         );
