@@ -50,7 +50,7 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 - 필요한 심볼이나 관계를 Serena로 좁힌 뒤, 부족한 경우에만 `rg` 같은 텍스트 검색을 보조로 사용합니다.
 - 사용자-facing 답변과 문서는 한국어로 작성합니다.
 - 실제 비밀값은 커밋하지 않습니다. `.env`는 `.gitignore`에 포함되어 있고, 공유용 값은 `.env.example`에만 둡니다.
-- DB 스키마 변경은 `src/main/resources/db/changelog/db.changelog-master.sql`의 Liquibase changeset으로 관리합니다.
+- DB 스키마 변경은 Liquibase로 관리합니다. `src/main/resources/db/changelog/db.changelog-master.json`은 include 전용이고, 실제 changeset은 `src/main/resources/db/changelog/changes/` 아래에 새 파일로 추가합니다.
 - JPA 엔티티와 Liquibase 스키마가 어긋나지 않게 함께 확인합니다.
 - pgvector 검색, 임베딩 upsert처럼 PostgreSQL 전용 기능은 `JdbcTemplate`/native SQL 쪽에서 다룹니다.
 - ACL이 걸린 검색은 fail-closed가 기본입니다. principal이 없거나 비어 있으면 검색 결과가 없어야 합니다.

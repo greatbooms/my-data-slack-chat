@@ -6,7 +6,8 @@
 
 - `application.yml`: 공통 설정
 - `application-local.yml`: 로컬 프로필 설정
-- `db/changelog/db.changelog-master.sql`: Liquibase changelog
+- `db/changelog/db.changelog-master.json`: Liquibase include master changelog
+- `db/changelog/changes/`: 실제 Liquibase formatted SQL changeset 파일
 
 ## 주의사항
 

@@ -14,7 +14,7 @@ spring:
         jdbc:
           time_zone: UTC
   liquibase:
-    change-log: classpath:/db/changelog/db.changelog-master.sql
+    change-log: classpath:/db/changelog/db.changelog-master.json
   graphql:
     http:
       path: /admin/graphql
@@ -43,3 +43,14 @@ my-data:
   embedding:
     model: ${EMBEDDING_MODEL:deterministic-1536}
     dimensions: 1536
+  llm:
+    provider: ${MY_DATA_LLM_PROVIDER:stub}
+    model: ${MY_DATA_LLM_MODEL:gpt-5.4-mini}
+    max-input-chunks: ${MY_DATA_LLM_MAX_INPUT_CHUNKS:5}
+    max-chars-per-chunk: ${MY_DATA_LLM_MAX_CHARS_PER_CHUNK:1200}
+    max-output-tokens: ${MY_DATA_LLM_MAX_OUTPUT_TOKENS:700}
+    connect-timeout: ${MY_DATA_LLM_CONNECT_TIMEOUT:5s}
+    request-timeout: ${MY_DATA_LLM_REQUEST_TIMEOUT:${MY_DATA_LLM_TIMEOUT_SECONDS:30}s}
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${OPENAI_API_KEY:}

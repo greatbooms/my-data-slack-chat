@@ -1,6 +1,7 @@
 package com.mydata.chat;
 
 import com.mydata.retrieval.RetrievedChunk;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -8,9 +9,10 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Component
+@ConditionalOnProperty(prefix = "my-data.llm", name = "provider", havingValue = "stub", matchIfMissing = true)
 public class StubLlmClient implements LlmClient {
     @Override
-    public String generate(String question, List<RetrievedChunk> chunks) {
+    public String generate(String question, List<RetrievedChunk> chunks, List<ChatContextMessage> contextMessages) {
         if (chunks == null || chunks.isEmpty()) {
             return "답변할 수 있는 검색 근거를 찾지 못했습니다.";
         }

@@ -51,6 +51,9 @@ public class IngestionPipelineService {
         validateAclEntries(rawDocument.aclEntries());
         var existingDocument = documents.findByDataSourceIdAndExternalId(dataSource.getId(), rawDocument.externalId());
         if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
+            ExternalDocumentEntity document = existingDocument.get();
+            updateDocumentFromIngestion(document, rawDocument);
+            documents.saveAndFlush(document);
             backfillMissingEmbeddings(existingDocument.get());
             return;
         }
@@ -66,17 +69,25 @@ public class IngestionPipelineService {
                 rawDocument.contentHash()
             ));
 
-        document.updateFromIngestion(
-            rawDocument.sourceType().name(),
-            rawDocument.title(),
-            rawDocument.uri(),
-            rawDocument.contentHash()
-        );
+        updateDocumentFromIngestion(document, rawDocument);
         document = documents.saveAndFlush(document);
 
         replaceAclEntries(document, rawDocument.aclEntries());
         List<DocumentChunkEntity> savedChunks = replaceChunks(document, rawDocument.content().text());
         writeEmbeddings(savedChunks);
+    }
+
+    private void updateDocumentFromIngestion(ExternalDocumentEntity document, RawExternalDocument rawDocument) {
+        document.updateFromIngestion(
+            rawDocument.sourceType().name(),
+            rawDocument.title(),
+            rawDocument.uri(),
+            rawDocument.mimeType(),
+            rawDocument.externalCreatedAt(),
+            rawDocument.externalUpdatedAt(),
+            rawDocument.contentHash(),
+            rawDocument.metadata()
+        );
     }
 
     private void replaceAclEntries(ExternalDocumentEntity document, List<RawAclEntry> rawAclEntries) {

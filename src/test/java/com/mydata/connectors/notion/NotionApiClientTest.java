@@ -44,8 +44,16 @@ class NotionApiClientTest {
                 {
                   "id": "page-1",
                   "url": "https://notion.so/page-1",
+                  "public_url": "https://public.notion.site/page-1",
                   "created_time": "2026-06-01T00:00:00.000Z",
                   "last_edited_time": "2026-06-02T00:00:00.000Z",
+                  "created_by": { "object": "user", "id": "creator-user" },
+                  "last_edited_by": { "object": "user", "id": "editor-user" },
+                  "parent": {
+                    "type": "page_id",
+                    "page_id": "parent-page"
+                  },
+                  "in_trash": true,
                   "properties": {
                     "Name": {
                       "type": "title",
@@ -64,6 +72,12 @@ class NotionApiClientTest {
         assertThat(page.id()).isEqualTo("page-1");
         assertThat(page.title()).isEqualTo("Project Brief");
         assertThat(page.url()).isEqualTo("https://notion.so/page-1");
+        assertThat(page.publicUrl()).isEqualTo("https://public.notion.site/page-1");
+        assertThat(page.parentType()).isEqualTo("page_id");
+        assertThat(page.parentId()).isEqualTo("parent-page");
+        assertThat(page.inTrash()).isTrue();
+        assertThat(page.createdByUserId()).isEqualTo("creator-user");
+        assertThat(page.lastEditedByUserId()).isEqualTo("editor-user");
         assertThat(page.lastEditedTime().toString()).isEqualTo("2026-06-02T00:00:00Z");
         assertThat(requests)
             .containsExactly("GET /v1/pages/page-1 auth=Bearer notion-token version=2026-03-11");

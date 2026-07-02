@@ -12,6 +12,9 @@ import java.util.UUID;
 @Service
 public class ChatApplicationService {
     private static final int RETRIEVAL_LIMIT = 5;
+    private static final int CONTEXT_MESSAGE_LIMIT = 6;
+    private static final int CONTEXT_MESSAGE_CHAR_LIMIT = 800;
+    private static final int RETRIEVAL_QUERY_CHAR_LIMIT = 3_000;
 
     private final ChatSessionRepository sessions;
     private final ChatMessageRepository messages;
@@ -55,9 +58,17 @@ public class ChatApplicationService {
             userId
         );
 
+        List<ChatContextMessage> contextMessages = recentContextMessages(
+            messages.findBySessionIdOrderByCreatedAt(session.getId())
+        );
         messages.save(ChatMessageEntity.create(session.getId(), "USER", question));
-        List<RetrievedChunk> chunks = retrieval.retrieve(workspaceId, principalKeys, question, RETRIEVAL_LIMIT);
-        String content = llm.generate(question, chunks);
+        List<RetrievedChunk> chunks = retrieval.retrieve(
+            workspaceId,
+            principalKeys,
+            retrievalQuery(question, contextMessages),
+            RETRIEVAL_LIMIT
+        );
+        String content = llm.generate(question, chunks, contextMessages);
         ChatMessageEntity assistantMessage = messages.save(ChatMessageEntity.create(
             session.getId(),
             "ASSISTANT",
@@ -107,6 +118,61 @@ public class ChatApplicationService {
                 return sessions.findByChannel(workspaceId, channelType, externalChannelId, externalThreadId)
                     .orElseThrow(() -> new IllegalStateException("채팅 세션을 생성하지 못했습니다"));
             });
+    }
+
+    private List<ChatContextMessage> recentContextMessages(List<ChatMessageEntity> existingMessages) {
+        if (existingMessages == null || existingMessages.isEmpty()) {
+            return List.of();
+        }
+
+        int fromIndex = Math.max(0, existingMessages.size() - CONTEXT_MESSAGE_LIMIT);
+        return existingMessages.subList(fromIndex, existingMessages.size()).stream()
+            .filter(message -> message.getContent() != null && !message.getContent().isBlank())
+            .map(message -> new ChatContextMessage(
+                normalizeRole(message.getRole()),
+                trimToLimit(message.getContent(), CONTEXT_MESSAGE_CHAR_LIMIT)
+            ))
+            .toList();
+    }
+
+    private String retrievalQuery(String question, List<ChatContextMessage> contextMessages) {
+        if (contextMessages == null || contextMessages.isEmpty()) {
+            return question;
+        }
+
+        StringBuilder query = new StringBuilder("이전 대화:\n");
+        for (ChatContextMessage contextMessage : contextMessages) {
+            query.append(contextMessage.role())
+                .append(": ")
+                .append(contextMessage.content())
+                .append("\n");
+        }
+        query.append("\n현재 질문:\n").append(question);
+        return trimFromStart(query.toString(), RETRIEVAL_QUERY_CHAR_LIMIT);
+    }
+
+    private String normalizeRole(String role) {
+        if ("ASSISTANT".equalsIgnoreCase(role)) {
+            return "ASSISTANT";
+        }
+        if ("USER".equalsIgnoreCase(role)) {
+            return "USER";
+        }
+        return "UNKNOWN";
+    }
+
+    private String trimToLimit(String value, int limit) {
+        if (value == null || value.length() <= limit) {
+            return value;
+        }
+        return value.substring(0, limit);
+    }
+
+    private String trimFromStart(String value, int limit) {
+        if (value == null || value.length() <= limit) {
+            return value;
+        }
+        return value.substring(value.length() - limit);
     }
 
     public record Answer(UUID sessionId, String content, List<Citation> citations) {

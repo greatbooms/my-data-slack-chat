@@ -179,7 +179,8 @@ DB 스키마는 Liquibase로 관리합니다.
 변경 이력 파일은 다음 위치에 있습니다.
 
 ```text
-src/main/resources/db/changelog/db.changelog-master.sql
+src/main/resources/db/changelog/db.changelog-master.json
+src/main/resources/db/changelog/changes/*.sql
 ```
 
 현재 로컬 DB의 Liquibase 적용 상태는 다음 명령으로 확인할 수 있습니다.
@@ -188,6 +189,17 @@ src/main/resources/db/changelog/db.changelog-master.sql
 docker exec my-data-postgres psql -U my_data -d my_data \
   -c "SELECT id, exectype FROM databasechangelog ORDER BY orderexecuted;"
 ```
+
+로컬 테스트 DB를 완전히 초기화할 때는 Docker 볼륨을 삭제한 뒤 애플리케이션을 한 번 실행해 Liquibase와 관리자 bootstrap을 적용하고, 개발용 seed를 실행합니다.
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+docker exec -i my-data-postgres psql -U my_data -d my_data < scripts/dev/seed-local.sql
+```
+
+`scripts/dev/seed-local.sql`은 Slack 외부 계정 매핑과 `notion-test` 데이터소스를 로컬 DB에 넣습니다.
 
 ## 현재 구현 범위
 
