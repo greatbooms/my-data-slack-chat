@@ -61,7 +61,19 @@ class NotionPageConnectorTest {
             Child Spec
             """.stripTrailing());
         assertThat(root.contentHash()).isNotBlank();
-        assertThat(root.metadata()).containsEntry("notionPageId", "root-page");
+        assertThat(root.metadata())
+            .containsEntry("notionPageId", "root-page")
+            .containsEntry("notionRootPageId", "root-page")
+            .containsEntry("notionDepth", 0)
+            .containsEntry("notionPath", List.of("Root Plan"))
+            .containsEntry("notionApiParentType", "workspace")
+            .containsEntry("notionPublicUrl", "https://public.notion.site/root-page")
+            .containsEntry("notionInTrash", false)
+            .containsEntry("notionCreatedByUserId", "creator-root-page")
+            .containsEntry("notionLastEditedByUserId", "editor-root-page");
+        assertThat(root.metadata())
+            .doesNotContainKey("notionParentPageId")
+            .doesNotContainKey("notionParentTitle");
         assertThat(root.aclEntries()).singleElement().satisfies(acl -> {
             assertThat(acl.principalKey()).isEqualTo(PrincipalKeys.user(ownerId));
             assertThat(acl.permission()).isEqualTo("READ");
@@ -75,6 +87,19 @@ class NotionPageConnectorTest {
             Child Spec
             Child body
             """.stripTrailing());
+        assertThat(child.metadata())
+            .containsEntry("notionPageId", "child-page")
+            .containsEntry("notionRootPageId", "root-page")
+            .containsEntry("notionParentPageId", "root-page")
+            .containsEntry("notionParentTitle", "Root Plan")
+            .containsEntry("notionDepth", 1)
+            .containsEntry("notionPath", List.of("Root Plan", "Child Spec"))
+            .containsEntry("notionApiParentType", "page_id")
+            .containsEntry("notionApiParentId", "root-page")
+            .containsEntry("notionPublicUrl", "https://public.notion.site/child-page")
+            .containsEntry("notionInTrash", false)
+            .containsEntry("notionCreatedByUserId", "creator-child-page")
+            .containsEntry("notionLastEditedByUserId", "editor-child-page");
     }
 
     @Test
@@ -137,8 +162,14 @@ class NotionPageConnectorTest {
                 id,
                 title,
                 url,
+                "https://public.notion.site/" + id,
                 Instant.parse("2026-06-01T00:00:00Z"),
-                Instant.parse("2026-06-02T00:00:00Z")
+                Instant.parse("2026-06-02T00:00:00Z"),
+                "creator-" + id,
+                "editor-" + id,
+                "root-page".equals(id) ? "workspace" : "page_id",
+                "root-page".equals(id) ? null : "root-page",
+                false
             ));
         }
 

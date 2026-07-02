@@ -40,6 +40,7 @@ public class PgVectorSearchRepository {
                   d.title,
                   d.uri,
                   d.source_type,
+                  d.metadata_json::text AS document_metadata_json,
                   e.embedding <=> CAST(? AS vector) AS distance
                 FROM document_embeddings e
                 JOIN document_chunks c ON c.id = e.chunk_id
@@ -78,7 +79,8 @@ public class PgVectorSearchRepository {
                             resultSet.getString("title"),
                             resultSet.getString("uri"),
                             resultSet.getString("source_type"),
-                            resultSet.getDouble("distance")
+                            resultSet.getDouble("distance"),
+                            resultSet.getString("document_metadata_json")
                         ));
                     }
                 }

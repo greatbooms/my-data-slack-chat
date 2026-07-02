@@ -17,6 +17,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,13 +43,17 @@ public class NotionPageConnector implements DataSourceConnector {
         String rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
         String principalKey = principalKey(dataSource);
 
-        fetchPage(rootPageId, rootPageId, principalKey, handler, new HashSet<>());
+        fetchPage(rootPageId, rootPageId, null, null, List.of(), 0, principalKey, handler, new HashSet<>());
         return cursor;
     }
 
     private void fetchPage(
         String pageId,
         String rootPageId,
+        String parentPageId,
+        String parentTitle,
+        List<String> parentPath,
+        int depth,
         String principalKey,
         DocumentHandler handler,
         Set<String> visitedPageIds
@@ -58,28 +63,62 @@ public class NotionPageConnector implements DataSourceConnector {
         }
 
         NotionApiClient.NotionPage page = notionClient.retrievePage(pageId);
+        String title = titleOrFallback(page);
+        List<String> path = new ArrayList<>(parentPath);
+        path.add(title);
         PageContent pageContent = collectPageContent(pageId);
-        String text = documentText(titleOrFallback(page), pageContent.lines());
+        String text = documentText(title, pageContent.lines());
 
         handler.handle(new RawExternalDocument(
             page.id(),
             DataSourceType.NOTION,
-            titleOrFallback(page),
+            title,
             page.url(),
             MIME_TYPE,
             page.createdTime(),
             page.lastEditedTime(),
             sha256(text),
-            Map.of(
-                "notionPageId", page.id(),
-                "notionRootPageId", rootPageId
-            ),
+            metadata(page, rootPageId, parentPageId, parentTitle, path, depth),
             new RawContent(text, MIME_TYPE),
             List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
         ));
 
         for (String childPageId : pageContent.childPageIds()) {
-            fetchPage(childPageId, rootPageId, principalKey, handler, visitedPageIds);
+            fetchPage(childPageId, rootPageId, page.id(), title, path, depth + 1, principalKey, handler, visitedPageIds);
+        }
+    }
+
+    private Map<String, Object> metadata(
+        NotionApiClient.NotionPage page,
+        String rootPageId,
+        String parentPageId,
+        String parentTitle,
+        List<String> path,
+        int depth
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("notionPageId", page.id());
+        metadata.put("notionRootPageId", rootPageId);
+        if (parentPageId != null) {
+            metadata.put("notionParentPageId", parentPageId);
+        }
+        if (parentTitle != null) {
+            metadata.put("notionParentTitle", parentTitle);
+        }
+        metadata.put("notionDepth", depth);
+        metadata.put("notionPath", List.copyOf(path));
+        putIfPresent(metadata, "notionApiParentType", page.parentType());
+        putIfPresent(metadata, "notionApiParentId", page.parentId());
+        putIfPresent(metadata, "notionPublicUrl", page.publicUrl());
+        metadata.put("notionInTrash", page.inTrash());
+        putIfPresent(metadata, "notionCreatedByUserId", page.createdByUserId());
+        putIfPresent(metadata, "notionLastEditedByUserId", page.lastEditedByUserId());
+        return metadata;
+    }
+
+    private void putIfPresent(Map<String, Object> metadata, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            metadata.put(key, value);
         }
     }
 

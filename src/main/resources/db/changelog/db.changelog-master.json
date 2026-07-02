@@ -1,0 +1,33 @@
+{
+  "databaseChangeLog": [
+    {
+      "include": {
+        "file": "db/changelog/changes/001-initial-schema.sql",
+        "logicalFilePath": "db/changelog/db.changelog-master.sql"
+      }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/002-unique-chat-session-external-thread.sql",
+        "logicalFilePath": "db/changelog/db.changelog-master.sql"
+      }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/003-admin-console-schema.sql",
+        "logicalFilePath": "db/changelog/db.changelog-master.sql"
+      }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/004-workspace-admin-schema.sql",
+        "logicalFilePath": "db/changelog/db.changelog-master.sql"
+      }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/005-cascade-chat-citations-on-chunk-delete.sql"
+      }
+    }
+  ]
+}

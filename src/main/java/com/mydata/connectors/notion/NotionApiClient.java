@@ -61,8 +61,14 @@ public class NotionApiClient implements NotionClient {
             root.path("id").asString(),
             extractPageTitle(root.path("properties")),
             blankToNull(root.path("url").asString(null)),
+            blankToNull(root.path("public_url").asString(null)),
             parseInstant(root.path("created_time").asString(null)),
-            parseInstant(root.path("last_edited_time").asString(null))
+            parseInstant(root.path("last_edited_time").asString(null)),
+            blankToNull(root.path("created_by").path("id").asString(null)),
+            blankToNull(root.path("last_edited_by").path("id").asString(null)),
+            extractParentType(root.path("parent")),
+            extractParentId(root.path("parent")),
+            root.path("in_trash").asBoolean(false)
         );
     }
 
@@ -165,6 +171,18 @@ public class NotionApiClient implements NotionClient {
         return "";
     }
 
+    private String extractParentType(JsonNode parent) {
+        return blankToNull(parent.path("type").asString(null));
+    }
+
+    private String extractParentId(JsonNode parent) {
+        String type = extractParentType(parent);
+        if (type == null || "workspace".equals(type)) {
+            return null;
+        }
+        return blankToNull(parent.path(type).asString(null));
+    }
+
     private String joinPlainText(JsonNode richTextArray) {
         if (!richTextArray.isArray()) {
             return "";
@@ -202,9 +220,18 @@ public class NotionApiClient implements NotionClient {
         String id,
         String title,
         String url,
+        String publicUrl,
         Instant createdTime,
-        Instant lastEditedTime
+        Instant lastEditedTime,
+        String createdByUserId,
+        String lastEditedByUserId,
+        String parentType,
+        String parentId,
+        boolean inTrash
     ) {
+        public NotionPage(String id, String title, String url, Instant createdTime, Instant lastEditedTime) {
+            this(id, title, url, null, createdTime, lastEditedTime, null, null, null, null, false);
+        }
     }
 
     public record NotionBlock(

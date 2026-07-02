@@ -11,9 +11,13 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnTransformer;
+import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Getter
@@ -21,6 +25,8 @@ import java.util.UUID;
 @Table(name = "external_documents")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ExternalDocumentEntity extends BaseEntity {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     @Column(name = "workspace_id", nullable = false)
     private UUID workspaceId;
 
@@ -41,6 +47,15 @@ public class ExternalDocumentEntity extends BaseEntity {
 
     @Column(name = "content_hash", columnDefinition = "text")
     private String contentHash;
+
+    @Column(name = "mime_type", columnDefinition = "text")
+    private String mimeType;
+
+    @Column(name = "external_created_at")
+    private Instant externalCreatedAt;
+
+    @Column(name = "external_updated_at")
+    private Instant externalUpdatedAt;
 
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "metadata_json", nullable = false, columnDefinition = "jsonb")
@@ -80,6 +95,9 @@ public class ExternalDocumentEntity extends BaseEntity {
         document.title = title;
         document.uri = uri;
         document.contentHash = contentHash;
+        document.mimeType = null;
+        document.externalCreatedAt = null;
+        document.externalUpdatedAt = null;
         document.metadataJson = JsonMaps.EMPTY_OBJECT;
         return document;
     }
@@ -97,9 +115,38 @@ public class ExternalDocumentEntity extends BaseEntity {
     }
 
     public void updateFromIngestion(String sourceType, String title, String uri, String contentHash) {
+        updateFromIngestion(sourceType, title, uri, null, null, null, contentHash, Map.of());
+    }
+
+    public void updateFromIngestion(
+        String sourceType,
+        String title,
+        String uri,
+        String mimeType,
+        Instant externalCreatedAt,
+        Instant externalUpdatedAt,
+        String contentHash,
+        Map<String, Object> metadata
+    ) {
         this.sourceType = sourceType;
         this.title = title;
         this.uri = uri;
+        this.mimeType = mimeType;
+        this.externalCreatedAt = externalCreatedAt;
+        this.externalUpdatedAt = externalUpdatedAt;
         this.contentHash = contentHash;
+        this.metadataJson = metadataJson(metadata);
+    }
+
+    private String metadataJson(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return JsonMaps.EMPTY_OBJECT;
+        }
+
+        try {
+            return OBJECT_MAPPER.writeValueAsString(new LinkedHashMap<>(metadata));
+        } catch (Exception exception) {
+            throw new IllegalStateException("문서 메타데이터를 JSON으로 변환하지 못했습니다", exception);
+        }
     }
 }

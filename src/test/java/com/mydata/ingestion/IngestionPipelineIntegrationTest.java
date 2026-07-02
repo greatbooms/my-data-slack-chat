@@ -8,6 +8,12 @@ import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
 import com.mydata.auth.PrincipalKeys;
 import com.mydata.auth.Permission;
+import com.mydata.chat.ChatMessageEntity;
+import com.mydata.chat.ChatMessageRepository;
+import com.mydata.chat.ChatRetrievalCitationEntity;
+import com.mydata.chat.ChatRetrievalCitationRepository;
+import com.mydata.chat.ChatSessionEntity;
+import com.mydata.chat.ChatSessionRepository;
 import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceStatus;
@@ -26,7 +32,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +53,10 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     @Autowired ExternalDocumentRepository documents;
     @Autowired DocumentAclEntryRepository aclEntries;
     @Autowired DocumentChunkRepository chunks;
+    @Autowired ChatSessionRepository chatSessions;
+    @Autowired ChatMessageRepository chatMessages;
+    @Autowired ChatRetrievalCitationRepository chatCitations;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @Test
     void workerIngestsLocalTextDataSource() {
@@ -200,6 +212,128 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             .satisfies(acl -> assertThat(acl.getPrincipalKey()).isEqualTo(PrincipalKeys.user(secondUser.getId())));
         assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
             .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
+    void reingestionReplacesChunksEvenWhenPreviousChunksWereCitedByChatHistory() {
+        UserEntity user = users.save(UserEntity.create("cited-reingest-owner@example.com", "Cited Reingest Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Cited reingest workspace"));
+        DataSourceEntity dataSource = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Cited local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        dataSource.putConfig("externalId", "cited-note");
+        dataSource.putConfig("title", "Cited note");
+        dataSource.putConfig("content", "old cited content");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+        IngestionJobEntity firstJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            dataSource.getId(),
+            IngestionTriggerType.MANUAL,
+            user.getId()
+        ));
+        worker.run(firstJob.getId());
+
+        ExternalDocumentEntity document = documents
+            .findByDataSourceIdAndExternalId(dataSource.getId(), "cited-note")
+            .orElseThrow();
+        UUID oldChunkId = chunks.findByDocumentIdOrderByChunkIndex(document.getId()).getFirst().getId();
+        ChatSessionEntity session = chatSessions.saveAndFlush(ChatSessionEntity.create(
+            workspace.getId(),
+            "SLACK",
+            "C-CITED",
+            "111.222",
+            user.getId()
+        ));
+        ChatMessageEntity assistantMessage = chatMessages.saveAndFlush(ChatMessageEntity.create(
+            session.getId(),
+            "ASSISTANT",
+            "old answer"
+        ));
+        chatCitations.saveAndFlush(ChatRetrievalCitationEntity.create(assistantMessage.getId(), oldChunkId, 1, 0.1));
+
+        dataSource.putConfig("content", "new cited content");
+        dataSource = dataSources.saveAndFlush(dataSource);
+        IngestionJobEntity secondJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            dataSource.getId(),
+            IngestionTriggerType.MANUAL,
+            user.getId()
+        ));
+
+        worker.run(secondJob.getId());
+
+        assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(chatCitations.findByChatMessageIdOrderByRank(assistantMessage.getId()))
+            .isEmpty();
+        assertThat(chunks.findByDocumentIdOrderByChunkIndex(document.getId()))
+            .hasSize(1)
+            .first()
+            .satisfies(chunk -> {
+                assertThat(chunk.getId()).isNotEqualTo(oldChunkId);
+                assertThat(chunk.getContent()).isEqualTo("new cited content");
+            });
+    }
+
+    @Test
+    void directPipelinePersistsExternalDocumentMetadataAndSourceTimestamps() {
+        UserEntity user = users.save(UserEntity.create("metadata-ingestion-owner@example.com", "Metadata Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Metadata workspace"));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.NOTION,
+            "Metadata notion",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+
+        pipeline.ingest(
+            dataSource,
+            new RawExternalDocument(
+                "metadata-page",
+                DataSourceType.NOTION,
+                "Metadata Page",
+                "https://notion.so/metadata-page",
+                "text/plain",
+                Instant.parse("2026-06-01T00:00:00Z"),
+                Instant.parse("2026-06-02T00:00:00Z"),
+                "metadata-page-hash",
+                Map.of(
+                    "notionPageId", "metadata-page",
+                    "notionParentPageId", "root-page",
+                    "notionParentTitle", "Root Page",
+                    "notionDepth", 1,
+                    "notionPath", List.of("Root Page", "Metadata Page")
+                ),
+                new RawContent("metadata content", "text/plain"),
+                List.of(new RawAclEntry(PrincipalKeys.user(user.getId()), "READ", false, "TEST"))
+            )
+        );
+
+        Map<String, Object> documentRow = jdbcTemplate.queryForMap(
+            """
+            SELECT mime_type, external_created_at, external_updated_at, metadata_json::text AS metadata_json
+            FROM external_documents
+            WHERE data_source_id = ?
+              AND external_id = ?
+            """,
+            dataSource.getId(),
+            "metadata-page"
+        );
+
+        assertThat(documentRow.get("mime_type")).isEqualTo("text/plain");
+        assertThat(documentRow.get("external_created_at").toString()).contains("2026-06-01");
+        assertThat(documentRow.get("external_updated_at").toString()).contains("2026-06-02");
+        assertThat(documentRow.get("metadata_json").toString())
+            .contains("\"notionPageId\": \"metadata-page\"")
+            .contains("\"notionParentPageId\": \"root-page\"")
+            .contains("\"notionPath\": [\"Root Page\", \"Metadata Page\"]")
+            .contains("\"notionDepth\": 1");
     }
 
     @Test

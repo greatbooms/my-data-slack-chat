@@ -5,5 +5,9 @@ import com.mydata.retrieval.RetrievedChunk;
 import java.util.List;
 
 public interface LlmClient {
-    String generate(String question, List<RetrievedChunk> chunks);
+    default String generate(String question, List<RetrievedChunk> chunks) {
+        return generate(question, chunks, List.of());
+    }
+
+    String generate(String question, List<RetrievedChunk> chunks, List<ChatContextMessage> contextMessages);
 }
