@@ -6,6 +6,8 @@
 
 - Socket Mode lifecycle은 비활성화 상태와 토큰 누락 상태에서 외부 연결을 열지 않아야 합니다.
 - Slack 이벤트는 내부 `SlackQuestionEvent`로 변환되어야 하고, 빈 질문은 무시해야 합니다.
+- Slack 답변 consumer는 매핑된 계정의 정상 응답과 매핑 누락 실패 응답을 함께 검증해야 합니다.
+- Slack Web API 전송은 테스트에서 실제 네트워크를 호출하지 말고 `SlackMessageClient` 대역을 사용합니다.
 - Slack HMAC signature를 검증합니다.
 - replay window와 malformed timestamp를 거부합니다.
 - URL verification challenge를 plain text로 반환합니다.
