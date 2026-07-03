@@ -201,6 +201,159 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void createsSlackDataSourceWithChannelConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("slack-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Slack workspace"));
+        MockHttpSession adminSession = loginAs("slack-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: SLACK,
+                name: "Slack channel",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                slackChannelId: "C1234567890",
+                slackWorkspaceUrl: "https://example.slack.com/"
+              }) {
+                id
+                type
+                slackChannelId
+                slackWorkspaceUrl
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.type").value("SLACK"))
+            .andExpect(jsonPath("$.data.createDataSource.slackChannelId").value("C1234567890"))
+            .andExpect(jsonPath("$.data.createDataSource.slackWorkspaceUrl").value("https://example.slack.com"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        DataSourceEntity dataSource = dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow();
+        assertThat(dataSource.configValue("slackChannelId")).isEqualTo("C1234567890");
+        assertThat(dataSource.configValue("slackWorkspaceUrl")).isEqualTo("https://example.slack.com");
+        assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void normalizesSlackWorkspaceUrlToOriginWhenFullSlackLinkIsProvided() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("slack-full-url-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Slack workspace"));
+        MockHttpSession adminSession = loginAs("slack-full-url-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: SLACK,
+                name: "Slack channel",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                slackChannelId: "C1234567890",
+                slackWorkspaceUrl: "https://example.slack.com/archives/C1234567890/p1710000000000100?thread_ts=1710000000.000100"
+              }) {
+                id
+                slackWorkspaceUrl
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.slackWorkspaceUrl").value("https://example.slack.com"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        DataSourceEntity dataSource = dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow();
+        assertThat(dataSource.configValue("slackWorkspaceUrl")).isEqualTo("https://example.slack.com");
+    }
+
+    @Test
+    void rejectsSlackDataSourceWithoutChannelId() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("slack-missing-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Slack workspace"));
+        MockHttpSession adminSession = loginAs("slack-missing-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: SLACK,
+                name: "Slack channel",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                slackChannelId: " "
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message").value("slackChannelId 값은 비어 있을 수 없습니다"));
+    }
+
+    @Test
+    void rejectsSlackDataSourceWithInvalidWorkspaceUrl() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("slack-url-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Slack workspace"));
+        MockHttpSession adminSession = loginAs("slack-url-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: SLACK,
+                name: "Slack channel",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                slackChannelId: "C1234567890",
+                slackWorkspaceUrl: "example.slack.com"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message").value("slackWorkspaceUrl 형식이 올바르지 않습니다"));
+    }
+
+    @Test
+    void rejectsAppSlackUrlForWorkspaceUrl() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("slack-app-url-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Slack workspace"));
+        MockHttpSession adminSession = loginAs("slack-app-url-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: SLACK,
+                name: "Slack channel",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                slackChannelId: "C1234567890",
+                slackWorkspaceUrl: "https://app.slack.com/client/T123/C1234567890"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("slackWorkspaceUrl에는 app.slack.com이 아닌 워크스페이스별 Slack URL을 입력해야 합니다"));
+    }
+
+    @Test
     void listsWorkspaceOptionsForDataSourceForm() throws Exception {
         String suffix = UUID.randomUUID().toString();
         UserEntity owner = users.save(UserEntity.create("workspace-owner-" + suffix + "@example.com", "Owner"));

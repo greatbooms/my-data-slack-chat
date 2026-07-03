@@ -9,10 +9,12 @@ function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
       await loginAdmin(email, password);
+      await storePasswordCredential(form);
       window.location.assign('/admin-ui/');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다');
@@ -74,3 +76,22 @@ function LoginPage() {
 }
 
 export default LoginPage;
+
+type PasswordCredentialConstructor = new (form: HTMLFormElement) => Credential;
+
+type PasswordCredentialWindow = Window & {
+  PasswordCredential?: PasswordCredentialConstructor;
+};
+
+async function storePasswordCredential(form: HTMLFormElement) {
+  const PasswordCredential = (window as PasswordCredentialWindow).PasswordCredential;
+  if (!PasswordCredential || !navigator.credentials?.store) {
+    return;
+  }
+
+  try {
+    await navigator.credentials.store(new PasswordCredential(form));
+  } catch {
+    // Password saving is browser-managed and must not block a successful login.
+  }
+}

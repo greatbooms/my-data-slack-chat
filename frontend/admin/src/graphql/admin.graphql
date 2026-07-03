@@ -215,6 +215,8 @@ fragment DataSourceFields on DataSource {
   syncMode
   visibility
   notionRootPageId
+  slackChannelId
+  slackWorkspaceUrl
   lastSyncedAt
   deletedAt
 }

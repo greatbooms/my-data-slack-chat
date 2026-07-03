@@ -86,6 +86,11 @@ public class LlmPromptBuilder {
             input.append("source_type: ").append(sourceType).append("\n");
         }
 
+        String externalCreatedAt = blankToNull(chunk.externalCreatedAt());
+        if (externalCreatedAt != null) {
+            input.append("created_at: ").append(externalCreatedAt).append("\n");
+        }
+
         appendNotionHierarchy(input, chunk);
 
         input.append("content:\n")

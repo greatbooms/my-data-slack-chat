@@ -4,7 +4,6 @@ import com.mydata.admin.datasources.AdminDataSourceInputs.CreateDataSourceInput;
 import com.mydata.admin.datasources.AdminDataSourceInputs.UpdateDataSourceInput;
 import com.mydata.auth.Permission;
 import com.mydata.auth.PrincipalKeys;
-import com.mydata.connectors.notion.NotionPageConnector;
 import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceStatus;
@@ -21,11 +20,16 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 public class AdminDataSourceService {
+    private static final String NOTION_ROOT_PAGE_ID_CONFIG_KEY = "notionRootPageId";
+    private static final String SLACK_CHANNEL_ID_CONFIG_KEY = "slackChannelId";
+    private static final String SLACK_WORKSPACE_URL_CONFIG_KEY = "slackWorkspaceUrl";
+
     private final DataSourceRepository dataSources;
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
@@ -170,32 +174,66 @@ public class AdminDataSourceService {
     private static void applyCreateConfig(DataSourceEntity dataSource, CreateDataSourceInput input) {
         if (dataSource.getType() == DataSourceType.NOTION) {
             dataSource.putConfig(
-                NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY,
+                NOTION_ROOT_PAGE_ID_CONFIG_KEY,
                 requireText(input.notionRootPageId(), "notionRootPageId")
             );
+        }
+        if (dataSource.getType() == DataSourceType.SLACK) {
+            dataSource.putConfig(
+                SLACK_CHANNEL_ID_CONFIG_KEY,
+                requireText(input.slackChannelId(), "slackChannelId")
+            );
+            putOptionalSlackWorkspaceUrl(dataSource, input.slackWorkspaceUrl());
         }
     }
 
     private static void applyUpdateConfig(DataSourceEntity dataSource, UpdateDataSourceInput input) {
-        if (input.notionRootPageId() == null) {
-            return;
-        }
-        if (dataSource.getType() != DataSourceType.NOTION) {
-            throw new IllegalArgumentException("notionRootPageId는 NOTION 데이터소스에서만 설정할 수 있습니다");
+        if (input.notionRootPageId() != null) {
+            if (dataSource.getType() != DataSourceType.NOTION) {
+                throw new IllegalArgumentException("notionRootPageId는 NOTION 데이터소스에서만 설정할 수 있습니다");
+            }
+
+            dataSource.putConfig(
+                NOTION_ROOT_PAGE_ID_CONFIG_KEY,
+                requireText(input.notionRootPageId(), "notionRootPageId")
+            );
         }
 
-        dataSource.putConfig(
-            NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY,
-            requireText(input.notionRootPageId(), "notionRootPageId")
-        );
+        if (input.slackChannelId() != null) {
+            if (dataSource.getType() != DataSourceType.SLACK) {
+                throw new IllegalArgumentException("slackChannelId는 SLACK 데이터소스에서만 설정할 수 있습니다");
+            }
+
+            dataSource.putConfig(
+                SLACK_CHANNEL_ID_CONFIG_KEY,
+                requireText(input.slackChannelId(), "slackChannelId")
+            );
+        }
+
+        if (input.slackWorkspaceUrl() != null) {
+            if (dataSource.getType() != DataSourceType.SLACK) {
+                throw new IllegalArgumentException("slackWorkspaceUrl은 SLACK 데이터소스에서만 설정할 수 있습니다");
+            }
+
+            putOptionalSlackWorkspaceUrl(dataSource, input.slackWorkspaceUrl());
+        }
+    }
+
+    private static void putOptionalSlackWorkspaceUrl(DataSourceEntity dataSource, String value) {
+        if (!hasText(value)) {
+            dataSource.putConfig(SLACK_WORKSPACE_URL_CONFIG_KEY, "");
+            return;
+        }
+
+        dataSource.putConfig(SLACK_WORKSPACE_URL_CONFIG_KEY, normalizeHttpUrl(value, "slackWorkspaceUrl"));
     }
 
     private static DataSourceType requireType(DataSourceType type) {
         if (type == null) {
             throw new IllegalArgumentException("type 값은 비어 있을 수 없습니다");
         }
-        if (type != DataSourceType.LOCAL_TEXT && type != DataSourceType.NOTION) {
-            throw new IllegalArgumentException("현재 관리자 화면에서는 LOCAL_TEXT 또는 NOTION 데이터소스만 만들 수 있습니다");
+        if (type != DataSourceType.LOCAL_TEXT && type != DataSourceType.NOTION && type != DataSourceType.SLACK) {
+            throw new IllegalArgumentException("현재 관리자 화면에서는 LOCAL_TEXT, NOTION 또는 SLACK 데이터소스만 만들 수 있습니다");
         }
         return type;
     }
@@ -213,6 +251,30 @@ public class AdminDataSourceService {
             throw new IllegalArgumentException(fieldName + " 값은 비어 있을 수 없습니다");
         }
         return value.trim();
+    }
+
+    private static String normalizeHttpUrl(String value, String fieldName) {
+        URI uri;
+        try {
+            uri = URI.create(value.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다", exception);
+        }
+
+        String scheme = uri.getScheme();
+        if (uri.getHost() == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+            throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다");
+        }
+        if ("app.slack.com".equalsIgnoreCase(uri.getHost())) {
+            throw new IllegalArgumentException(fieldName + "에는 app.slack.com이 아닌 워크스페이스별 Slack URL을 입력해야 합니다");
+        }
+
+        try {
+            URI origin = new URI(scheme.toLowerCase(), null, uri.getHost().toLowerCase(), uri.getPort(), null, null, null);
+            return origin.toString();
+        } catch (Exception exception) {
+            throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다", exception);
+        }
     }
 
     private static boolean hasText(String value) {

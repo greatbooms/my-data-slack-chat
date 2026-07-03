@@ -18,6 +18,8 @@ public record AdminDataSourcePayload(
     SyncMode syncMode,
     DataSourceVisibility visibility,
     String notionRootPageId,
+    String slackChannelId,
+    String slackWorkspaceUrl,
     String lastSyncedAt,
     String deletedAt
 ) {
@@ -34,6 +36,8 @@ public record AdminDataSourcePayload(
             dataSource.getSyncMode(),
             dataSource.getVisibility(),
             dataSource.configValue("notionRootPageId"),
+            dataSource.configValue("slackChannelId"),
+            dataSource.configValue("slackWorkspaceUrl"),
             lastSyncedAt,
             deletedAt
         );

@@ -73,7 +73,14 @@ public class IngestionWorker {
                 throw new IllegalStateException("등록된 커넥터가 없습니다: " + dataSource.getType());
             }
 
-            connector.fetchChanges(dataSource, new SyncCursor(Map.of()), rawDocument -> pipeline.ingest(dataSource, rawDocument));
+            SyncCursor nextCursor = connector.fetchChanges(
+                dataSource,
+                new SyncCursor(dataSource.syncCursorValue()),
+                rawDocument -> pipeline.ingest(dataSource, rawDocument)
+            );
+            if (nextCursor != null) {
+                dataSource.replaceSyncCursor(nextCursor.value());
+            }
             dataSource.markSynced();
             job.markSucceeded();
         });

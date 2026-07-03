@@ -59,7 +59,7 @@ class ChatApplicationServiceThreadContextTest {
             .thenReturn(List.of(previousQuestion, previousAnswer));
         when(messages.save(any(ChatMessageEntity.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
-        when(retrieval.retrieve(eq(workspaceId), eq(principalKeys), anyString(), eq(5)))
+        when(retrieval.retrieve(eq(workspaceId), eq(principalKeys), anyString(), anyString(), eq(5)))
             .thenReturn(List.of());
         when(llm.generate(eq("이거 뎁스별로 이야기해줘"), eq(List.of()), anyList()))
             .thenReturn("뎁스별 답변");
@@ -75,11 +75,13 @@ class ChatApplicationServiceThreadContextTest {
         );
 
         ArgumentCaptor<String> retrievalQuery = ArgumentCaptor.forClass(String.class);
-        verify(retrieval).retrieve(eq(workspaceId), eq(principalKeys), retrievalQuery.capture(), eq(5));
+        ArgumentCaptor<String> lexicalQuery = ArgumentCaptor.forClass(String.class);
+        verify(retrieval).retrieve(eq(workspaceId), eq(principalKeys), retrievalQuery.capture(), lexicalQuery.capture(), eq(5));
         assertThat(retrievalQuery.getValue())
             .contains("지금 노션 페이지 목록")
             .contains("20260630, 메모, meeting, 할일")
             .contains("이거 뎁스별로 이야기해줘");
+        assertThat(lexicalQuery.getValue()).isEqualTo("이거 뎁스별로 이야기해줘");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ChatContextMessage>> context = ArgumentCaptor.forClass(List.class);

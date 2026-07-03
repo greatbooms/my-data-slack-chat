@@ -107,6 +107,108 @@ describe('관리자 앱 인증 흐름', () => {
     }
   });
 
+  it('브라우저가 지원하면 로그인 성공 후 비밀번호 저장을 요청한다', async () => {
+    const assignSpy = vi.fn();
+    const restoreLocation = stubLocationAssign(assignSpy, '/admin-ui/login');
+    const storeCredential = vi.fn().mockResolvedValue(undefined);
+    const PasswordCredential = vi.fn(function (
+      this: { form: HTMLFormElement; id: string; type: string },
+      form: HTMLFormElement
+    ) {
+      this.form = form;
+      this.id = 'admin@example.com';
+      this.type = 'password';
+    });
+    Object.defineProperty(window.navigator, 'credentials', {
+      configurable: true,
+      value: {
+        store: storeCredential
+      }
+    });
+    vi.stubGlobal('PasswordCredential', PasswordCredential);
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        id: 'admin-id',
+        email: 'admin@example.com',
+        displayName: '관리자',
+        authorities: ['ROLE_ADMIN']
+      })));
+
+    try {
+      renderApp('/login');
+
+      fireEvent.change(screen.getByLabelText('이메일'), {
+        target: { value: 'admin@example.com' }
+      });
+      fireEvent.change(screen.getByLabelText('비밀번호'), {
+        target: { value: 'secret1234' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: '로그인' }));
+
+      await waitFor(() => {
+        expect(storeCredential).toHaveBeenCalledTimes(1);
+      });
+      expect(PasswordCredential).toHaveBeenCalledWith(expect.any(HTMLFormElement));
+      expect(assignSpy).toHaveBeenCalledWith('/admin-ui/');
+    } finally {
+      restoreLocation();
+    }
+  });
+
+  it('비밀번호 저장 요청이 실패해도 로그인 성공 이동을 막지 않는다', async () => {
+    const assignSpy = vi.fn();
+    const restoreLocation = stubLocationAssign(assignSpy, '/admin-ui/login');
+    Object.defineProperty(window.navigator, 'credentials', {
+      configurable: true,
+      value: {
+        store: vi.fn().mockRejectedValue(new Error('save rejected'))
+      }
+    });
+    vi.stubGlobal('PasswordCredential', vi.fn(function (
+      this: { form: HTMLFormElement; id: string; type: string },
+      form: HTMLFormElement
+    ) {
+      this.form = form;
+      this.id = 'admin@example.com';
+      this.type = 'password';
+    }));
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        id: 'admin-id',
+        email: 'admin@example.com',
+        displayName: '관리자',
+        authorities: ['ROLE_ADMIN']
+      })));
+
+    try {
+      renderApp('/login');
+
+      fireEvent.change(screen.getByLabelText('이메일'), {
+        target: { value: 'admin@example.com' }
+      });
+      fireEvent.change(screen.getByLabelText('비밀번호'), {
+        target: { value: 'secret1234' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: '로그인' }));
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith('/admin-ui/');
+      });
+    } finally {
+      restoreLocation();
+    }
+  });
+
   it('대시보드에서 관리자 정보와 요약 지표를 GraphQL로 불러온다', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
@@ -547,8 +649,8 @@ describe('관리자 앱 인증 흐름', () => {
     });
     expect(screen.getByRole('option', { name: 'LOCAL_TEXT' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'NOTION' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'SLACK' })).toBeVisible();
     expect(screen.queryByRole('option', { name: 'GOOGLE_DRIVE' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'SLACK' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'NOTION' }
     });
@@ -570,6 +672,93 @@ describe('관리자 앱 인증 흐름', () => {
       type: 'NOTION',
       workspaceId: 'workspace-id'
     });
+  });
+
+  it('Slack 데이터소스를 만들 때 채널 ID를 함께 보낸다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([]))
+      .mockResolvedValueOnce(adminDataSourceFormOptionsResponse({
+        users: [
+          {
+            id: 'user-id',
+            email: 'owner@example.com',
+            displayName: '데이터 오너',
+            role: 'USER',
+            status: 'ACTIVE',
+            deletedAt: null
+          }
+        ],
+        workspaces: [
+          {
+            id: 'workspace-id',
+            ownerUserId: 'user-id',
+            name: 'Personal',
+            deletedAt: null
+          }
+        ]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('createDataSource', dataSourceFixture({
+        id: 'slack-source-id',
+        name: 'Slack channel',
+        type: 'SLACK',
+        slackChannelId: 'C1234567890',
+        slackWorkspaceUrl: 'https://example.slack.com'
+      })))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({
+          id: 'slack-source-id',
+          name: 'Slack channel',
+          type: 'SLACK',
+          slackChannelId: 'C1234567890',
+          slackWorkspaceUrl: 'https://example.slack.com'
+        })
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('데이터소스가 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '데이터소스 추가' }));
+    expect(await screen.findByRole('option', { name: 'Personal' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Slack channel' }
+    });
+    fireEvent.change(screen.getByLabelText('워크스페이스'), {
+      target: { value: 'workspace-id' }
+    });
+    fireEvent.change(screen.getByLabelText('소유 유저'), {
+      target: { value: 'user-id' }
+    });
+    fireEvent.change(screen.getByLabelText('종류'), {
+      target: { value: 'SLACK' }
+    });
+    expect(screen.queryByLabelText('Notion 루트 페이지 ID')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Slack 채널 ID'), {
+      target: { value: 'C1234567890' }
+    });
+    fireEvent.change(screen.getByLabelText('Slack 워크스페이스 URL'), {
+      target: { value: 'https://example.slack.com' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    });
+    const createBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string);
+    expect(createBody.variables.input).toMatchObject({
+      name: 'Slack channel',
+      ownerUserId: 'user-id',
+      slackChannelId: 'C1234567890',
+      slackWorkspaceUrl: 'https://example.slack.com',
+      type: 'SLACK',
+      workspaceId: 'workspace-id'
+    });
+    expect(createBody.variables.input.notionRootPageId).toBeUndefined();
   });
 });
 
@@ -713,6 +902,8 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     syncMode: 'MANUAL',
     visibility: 'PRIVATE',
     notionRootPageId: null,
+    slackChannelId: null,
+    slackWorkspaceUrl: null,
     lastSyncedAt: null,
     deletedAt: null,
     ...overrides

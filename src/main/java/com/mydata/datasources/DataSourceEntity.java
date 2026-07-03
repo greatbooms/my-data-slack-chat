@@ -154,12 +154,33 @@ public class DataSourceEntity extends BaseEntity {
         }
     }
 
+    public Map<String, Object> syncCursorValue() {
+        try {
+            return Map.copyOf(readMap(syncCursorJson));
+        } catch (Exception exception) {
+            throw new IllegalStateException("데이터소스 sync cursor를 읽지 못했습니다", exception);
+        }
+    }
+
+    public void replaceSyncCursor(Map<String, Object> syncCursor) {
+        try {
+            syncCursorJson = OBJECT_MAPPER.writeValueAsString(syncCursor == null ? Map.of() : syncCursor);
+            touch();
+        } catch (Exception exception) {
+            throw new IllegalStateException("데이터소스 sync cursor를 갱신하지 못했습니다", exception);
+        }
+    }
+
     private Map<String, Object> readConfig() throws java.io.IOException {
-        if (configJson == null || configJson.isBlank()) {
+        return readMap(configJson);
+    }
+
+    private Map<String, Object> readMap(String json) throws java.io.IOException {
+        if (json == null || json.isBlank()) {
             return new LinkedHashMap<>();
         }
 
-        return OBJECT_MAPPER.readValue(configJson, CONFIG_MAP_TYPE);
+        return OBJECT_MAPPER.readValue(json, CONFIG_MAP_TYPE);
     }
 
     private void touch() {
