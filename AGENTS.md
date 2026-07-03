@@ -42,6 +42,7 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 - 커밋 제목은 Conventional Commits 형식을 따릅니다. 예: `fix(workspaces): exclude deleted workspace data`
 - 커밋은 빈 본문 없이 작성합니다. 본문에는 최소한 작업 내용과 검증 내용을 적습니다.
 - PR 제목도 Conventional Commits 의미가 드러나게 작성하고, PR 본문에는 작업 내용, 영향 범위, 검증 결과를 포함합니다.
+- PR 병합은 merge commit 방식으로 진행합니다. squash merge나 rebase merge는 명시 요청이 없는 한 사용하지 않습니다.
 - UI가 포함된 작업은 완료 전에 Playwright로 실제 브라우저 화면을 직접 확인합니다.
 - 기능 테스트는 최소한 정상 케이스와 실패 케이스를 각각 하나 이상 포함합니다.
 - 커밋/PR 본문에는 자동 테스트와 Playwright 실제 화면 확인 결과를 함께 적습니다.
