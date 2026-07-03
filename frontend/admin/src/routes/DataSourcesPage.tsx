@@ -60,7 +60,12 @@ function DataSourcesPage() {
       if (editingDataSource) {
         return await updateAdminDataSource(editingDataSource.id, {
           name: values.name,
-          notionRootPageId: editingDataSource.type === 'NOTION' ? values.notionRootPageId : undefined,
+          notionDatabaseId: editingDataSource.type === 'NOTION' && values.notionRootKind === 'DATABASE'
+            ? values.notionDatabaseId
+            : undefined,
+          notionRootPageId: editingDataSource.type === 'NOTION' && values.notionRootKind === 'PAGE'
+            ? values.notionRootPageId
+            : undefined,
           ownerUserId: values.ownerUserId,
           slackChannelId: editingDataSource.type === 'SLACK' ? values.slackChannelId : undefined,
           slackWorkspaceUrl: editingDataSource.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,
@@ -72,7 +77,12 @@ function DataSourcesPage() {
 
       return await createAdminDataSource({
         name: values.name,
-        notionRootPageId: values.type === 'NOTION' ? values.notionRootPageId : undefined,
+        notionDatabaseId: values.type === 'NOTION' && values.notionRootKind === 'DATABASE'
+          ? values.notionDatabaseId
+          : undefined,
+        notionRootPageId: values.type === 'NOTION' && values.notionRootKind === 'PAGE'
+          ? values.notionRootPageId
+          : undefined,
         ownerUserId: values.ownerUserId,
         slackChannelId: values.type === 'SLACK' ? values.slackChannelId : undefined,
         slackWorkspaceUrl: values.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,

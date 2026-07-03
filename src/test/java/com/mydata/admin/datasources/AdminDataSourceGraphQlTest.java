@@ -201,6 +201,97 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void createsNotionDataSourceWithDatabaseLinkConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-db-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-db-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Notion database",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionDatabaseId: "https://www.notion.so/greatbooms/Roadmap-248104cd477e80fdb757e945d38000bd?v=248104cd477e80afbc30000bd28de8f9"
+              }) {
+                id
+                type
+                notionRootPageId
+                notionDatabaseId
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.type").value("NOTION"))
+            .andExpect(jsonPath("$.data.createDataSource.notionRootPageId").doesNotExist())
+            .andExpect(jsonPath("$.data.createDataSource.notionDatabaseId").value("248104cd-477e-80fd-b757-e945d38000bd"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("notionDatabaseId")).isEqualTo("248104cd-477e-80fd-b757-e945d38000bd");
+        assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void rejectsNotionDataSourceWithBothPageAndDatabaseConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-both-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-both-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Invalid Notion",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "root-page-id",
+                notionDatabaseId: "248104cd477e80fdb757e945d38000bd"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("NOTION 데이터소스는 notionRootPageId 또는 notionDatabaseId 중 하나만 설정해야 합니다"));
+    }
+
+    @Test
+    void rejectsNotionDataSourceWithoutPageOrDatabaseConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-empty-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-empty-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Invalid Notion",
+                visibility: WORKSPACE,
+                syncMode: MANUAL
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("NOTION 데이터소스는 notionRootPageId 또는 notionDatabaseId 중 하나를 설정해야 합니다"));
+    }
+
+    @Test
     void createsSlackDataSourceWithChannelConfig() throws Exception {
         String suffix = UUID.randomUUID().toString();
         UserEntity owner = users.save(UserEntity.create("slack-owner-" + suffix + "@example.com", "Owner"));

@@ -161,6 +161,7 @@ type DataSource {
   syncMode: SyncMode!
   visibility: DataSourceVisibility!
   notionRootPageId: String
+  notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
   lastSyncedAt: String
@@ -223,6 +224,7 @@ input CreateDataSourceInput {
   visibility: DataSourceVisibility!
   syncMode: SyncMode!
   notionRootPageId: String
+  notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
 }
@@ -234,6 +236,7 @@ input UpdateDataSourceInput {
   visibility: DataSourceVisibility
   syncMode: SyncMode
   notionRootPageId: String
+  notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
 }
