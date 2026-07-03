@@ -11,14 +11,17 @@ public class SlackSocketModeEventHandler {
     private static final Logger log = LoggerFactory.getLogger(SlackSocketModeEventHandler.class);
 
     private final SlackQuestionEventConsumer questionConsumer;
-    private final TaskExecutor questionExecutor;
+    private final SlackMessageEventConsumer messageConsumer;
+    private final TaskExecutor eventExecutor;
 
     public SlackSocketModeEventHandler(
         SlackQuestionEventConsumer questionConsumer,
-        @Qualifier("applicationTaskExecutor") TaskExecutor questionExecutor
+        SlackMessageEventConsumer messageConsumer,
+        @Qualifier("applicationTaskExecutor") TaskExecutor eventExecutor
     ) {
         this.questionConsumer = questionConsumer;
-        this.questionExecutor = questionExecutor;
+        this.messageConsumer = messageConsumer;
+        this.eventExecutor = eventExecutor;
     }
 
     public void handleAppMention(
@@ -59,6 +62,42 @@ public class SlackSocketModeEventHandler {
         );
     }
 
+    public void handleChannelMessage(
+        String teamId,
+        String channelId,
+        String userId,
+        String text,
+        String messageTimestamp,
+        String threadTimestamp,
+        String channelType
+    ) {
+        if (isBlank(text) || isBlank(channelId) || isBlank(messageTimestamp)) {
+            return;
+        }
+
+        SlackMessageIngestionEvent event = new SlackMessageIngestionEvent(
+            teamId,
+            channelId,
+            userId,
+            text.trim(),
+            messageTimestamp,
+            threadTimestamp,
+            channelType
+        );
+
+        try {
+            eventExecutor.execute(() -> messageConsumer.accept(event));
+        } catch (RuntimeException exception) {
+            log.warn(
+                "Slack 메시지 적재 비동기 작업 등록에 실패했습니다. teamId={}, channelId={}, messageTs={}",
+                event.teamId(),
+                event.channelId(),
+                event.messageTimestamp(),
+                exception
+            );
+        }
+    }
+
     private void handle(
         SlackQuestionEvent.Source source,
         String teamId,
@@ -84,7 +123,7 @@ public class SlackSocketModeEventHandler {
         );
 
         try {
-            questionExecutor.execute(() -> questionConsumer.accept(event));
+            eventExecutor.execute(() -> questionConsumer.accept(event));
         } catch (RuntimeException exception) {
             log.warn(
                 "Slack 질문 비동기 작업 등록에 실패했습니다. teamId={}, channelId={}, userId={}, externalThreadId={}",

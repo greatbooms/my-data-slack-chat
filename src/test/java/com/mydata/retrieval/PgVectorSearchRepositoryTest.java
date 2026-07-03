@@ -181,4 +181,91 @@ class PgVectorSearchRepositoryTest extends PostgresIntegrationTest {
 
         assertThat(hidden).isEmpty();
     }
+
+    @Test
+    void prioritizesLexicalMatchesByNewestDocumentDate() {
+        UserEntity owner = users.save(UserEntity.create("latest-retrieval-owner@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Latest retrieval workspace"));
+        DataSourceEntity oldSamsung = ingestLocalText(
+            workspace,
+            owner,
+            "old-samsung-report",
+            "Old Samsung report",
+            "삼성전자 딥 분석 리포트 2026.05.11 오래된 내용",
+            "2026-05-11T00:11:30Z"
+        );
+        DataSourceEntity newSamsung = ingestLocalText(
+            workspace,
+            owner,
+            "new-samsung-report",
+            "New Samsung report",
+            "삼성전자 딥 분석 리포트 2026.07.01 최신 내용",
+            "2026-07-01T00:11:13Z"
+        );
+        ingestLocalText(
+            workspace,
+            owner,
+            "other-stock-report",
+            "Other stock report",
+            "SOXL 딥 분석 리포트 2026.07.02 다른 종목",
+            "2026-07-02T00:11:13Z"
+        );
+
+        List<RetrievedChunk> chunks = retrievalService.retrieve(
+            workspace.getId(),
+            List.of(PrincipalKeys.user(owner.getId())),
+            "삼성전자 마지막 기업분석 요약해줘",
+            2
+        );
+
+        assertThat(chunks)
+            .extracting(RetrievedChunk::title)
+            .containsSubsequence("New Samsung report", "Old Samsung report");
+        assertThat(chunks.getFirst().title()).isEqualTo("New Samsung report");
+        assertThat(chunks.getFirst().externalCreatedAt()).startsWith("2026-07-01");
+        assertThat(oldSamsung.getId()).isNotEqualTo(newSamsung.getId());
+    }
+
+    private DataSourceEntity ingestLocalText(
+        WorkspaceEntity workspace,
+        UserEntity owner,
+        String externalId,
+        String title,
+        String content,
+        String externalCreatedAt
+    ) {
+        DataSourceEntity source = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            title,
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        source.putConfig("externalId", externalId);
+        source.putConfig("title", title);
+        source.putConfig("content", content);
+        source.putConfig("principalKey", PrincipalKeys.user(owner.getId()));
+        source = dataSources.saveAndFlush(source);
+        IngestionJobEntity job = jobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(),
+            source.getId(),
+            IngestionTriggerType.MANUAL,
+            owner.getId()
+        ));
+        worker.run(job.getId());
+        jdbcTemplate.update(
+            """
+            UPDATE external_documents
+            SET external_created_at = ?::timestamptz,
+                external_updated_at = ?::timestamptz
+            WHERE data_source_id = ?
+              AND external_id = ?
+            """,
+            externalCreatedAt,
+            externalCreatedAt,
+            source.getId(),
+            externalId
+        );
+        return source;
+    }
 }

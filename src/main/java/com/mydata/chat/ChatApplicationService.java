@@ -66,6 +66,7 @@ public class ChatApplicationService {
             workspaceId,
             principalKeys,
             retrievalQuery(question, contextMessages),
+            question,
             RETRIEVAL_LIMIT
         );
         String content = llm.generate(question, chunks, contextMessages);

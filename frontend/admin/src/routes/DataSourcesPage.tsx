@@ -62,6 +62,8 @@ function DataSourcesPage() {
           name: values.name,
           notionRootPageId: editingDataSource.type === 'NOTION' ? values.notionRootPageId : undefined,
           ownerUserId: values.ownerUserId,
+          slackChannelId: editingDataSource.type === 'SLACK' ? values.slackChannelId : undefined,
+          slackWorkspaceUrl: editingDataSource.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,
           status: values.status,
           syncMode: values.syncMode,
           visibility: values.visibility
@@ -72,6 +74,8 @@ function DataSourcesPage() {
         name: values.name,
         notionRootPageId: values.type === 'NOTION' ? values.notionRootPageId : undefined,
         ownerUserId: values.ownerUserId,
+        slackChannelId: values.type === 'SLACK' ? values.slackChannelId : undefined,
+        slackWorkspaceUrl: values.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,
         syncMode: values.syncMode,
         type: values.type,
         visibility: values.visibility,

@@ -14,6 +14,8 @@ export type DataSourceFormValues = {
   name: string;
   notionRootPageId: string;
   ownerUserId: string;
+  slackChannelId: string;
+  slackWorkspaceUrl: string;
   status: DataSourceStatus;
   syncMode: SyncMode;
   type: DataSourceType;
@@ -125,6 +127,7 @@ function DataSourceFormDialog({
             >
               <option value="LOCAL_TEXT">LOCAL_TEXT</option>
               <option value="NOTION">NOTION</option>
+              <option value="SLACK">SLACK</option>
             </select>
           </label>
 
@@ -138,6 +141,30 @@ function DataSourceFormDialog({
                 onChange={(event) => setValues({ ...values, notionRootPageId: event.target.value })}
               />
             </label>
+          ) : null}
+
+          {values.type === 'SLACK' ? (
+            <>
+              <label>
+                Slack 채널 ID
+                <input
+                  value={values.slackChannelId}
+                  disabled={Boolean(dataSource && dataSource.type !== 'SLACK')}
+                  required
+                  onChange={(event) => setValues({ ...values, slackChannelId: event.target.value })}
+                />
+              </label>
+              <label>
+                Slack 워크스페이스 URL
+                <input
+                  value={values.slackWorkspaceUrl}
+                  disabled={Boolean(dataSource && dataSource.type !== 'SLACK')}
+                  placeholder="https://example.slack.com"
+                  type="url"
+                  onChange={(event) => setValues({ ...values, slackWorkspaceUrl: event.target.value })}
+                />
+              </label>
+            </>
           ) : null}
 
           {dataSource ? (
@@ -196,6 +223,8 @@ function createInitialValues(dataSource: DataSourceFieldsFragment | null): DataS
     name: dataSource?.name ?? '',
     notionRootPageId: dataSource?.notionRootPageId ?? '',
     ownerUserId: dataSource?.ownerUserId ?? '',
+    slackChannelId: dataSource?.slackChannelId ?? '',
+    slackWorkspaceUrl: dataSource?.slackWorkspaceUrl ?? '',
     status: dataSource?.status ?? 'ACTIVE',
     syncMode: dataSource?.syncMode ?? 'MANUAL',
     type: dataSource?.type ?? 'LOCAL_TEXT',

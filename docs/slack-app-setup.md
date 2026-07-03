@@ -2,7 +2,7 @@
 
 이 문서는 로컬 개발에서 Slack 이벤트를 받기 위한 앱 설정 절차입니다. 초기 개발은 Socket Mode를 사용합니다. Socket Mode는 애플리케이션이 Slack으로 WebSocket 연결을 열어 이벤트를 받기 때문에 로컬 개발 중에 공개 HTTPS 터널을 열 필요가 없습니다.
 
-현재 코드는 `SLACK_SOCKET_MODE_ENABLED=true`일 때 `app_mention`, `message.im` 이벤트를 내부 질문 이벤트로 변환합니다. `/slack/events` HTTP endpoint는 `SLACK_HTTP_EVENTS_ENABLED=true`일 때만 활성화됩니다.
+현재 코드는 `SLACK_SOCKET_MODE_ENABLED=true`일 때 `app_mention`, `message.im` 이벤트를 내부 질문 이벤트로 변환하고, `message.channels`, `message.groups` 이벤트를 Slack 데이터소스에 즉시 적재합니다. `/slack/events` HTTP endpoint는 `SLACK_HTTP_EVENTS_ENABLED=true`일 때 활성화되지만, 현재는 Slack URL verification과 서명 검증 확인까지만 지원합니다.
 
 공식 문서:
 
@@ -36,6 +36,8 @@
       "bot": [
         "app_mentions:read",
         "chat:write",
+        "channels:history",
+        "groups:history",
         "im:history"
       ]
     }
@@ -44,6 +46,8 @@
     "event_subscriptions": {
       "bot_events": [
         "app_mention",
+        "message.channels",
+        "message.groups",
         "message.im"
       ]
     },
@@ -54,6 +58,7 @@
 }
 ```
 
+비공개 채널을 수집하지 않을 경우 `groups:history`는 제외해도 됩니다.
 manifest를 사용하지 않고 화면에서 직접 설정해도 됩니다. 직접 설정하는 경우 아래 단계를 그대로 따라갑니다.
 
 ## 2. Socket Mode App Token 발급
@@ -85,6 +90,8 @@ App-Level Token은 보통 `xapp-`로 시작합니다.
 - `app_mentions:read`: 채널에서 앱을 멘션한 질문 이벤트를 받습니다.
 - `chat:write`: Slack 채널이나 스레드에 답변 메시지를 보냅니다.
 - `im:history`: DM 질문 이벤트까지 받을 때 추가합니다.
+- `channels:history`: 공개 채널 메시지를 데이터소스로 수집할 때 추가합니다.
+- `groups:history`: 비공개 채널 메시지를 데이터소스로 수집할 때 추가합니다.
 
 `.env`에는 다음처럼 넣습니다.
 
@@ -110,6 +117,8 @@ Slack 앱 설정에서 `Socket Mode`가 켜져 있는지 확인합니다. manife
 Slack 앱 설정에서 `Event Subscriptions`를 켜고, `Subscribe to bot events`에 다음 이벤트를 추가합니다.
 
 - `app_mention`: 채널에서 앱을 멘션한 질문을 받을 때 사용합니다.
+- `message.channels`: 공개 채널 메시지를 데이터소스에 event 기반으로 적재할 때 사용합니다.
+- `message.groups`: 비공개 채널 메시지를 데이터소스에 event 기반으로 적재할 때 사용합니다.
 - `message.im`: 앱 DM으로 질문을 받을 때 사용합니다.
 
 Socket Mode에서는 `Request URL`을 입력하지 않습니다. 앱이 Slack으로 연결을 열기 때문에 Slack이 로컬 서버로 직접 HTTP 요청을 보낼 필요가 없습니다.
@@ -125,9 +134,23 @@ Slack 채널에서 다음처럼 초대합니다.
 
 DM으로 질문하려면 Slack 앱의 `App Home` 또는 DM 화면에서 앱에게 메시지를 보냅니다.
 
+## Slack 채널 데이터소스 수집
+
+Slack 채널 메시지를 RAG 데이터로 적재하려면 앱이 수집 대상 채널에 초대되어 있어야 하고, `SLACK_BOT_TOKEN`에 채널 종류에 맞는 history scope가 있어야 합니다.
+
+- 공개 채널: `channels:history`
+- 비공개 채널: `groups:history`
+
+관리자 화면에서는 `데이터소스 > 데이터소스 추가`에서 종류를 `SLACK`으로 선택하고, `Slack 채널 ID`에 수집할 채널 ID를 입력합니다. Slack 웹에서 채널을 열었을 때 URL의 `/archives/` 뒤에 보이는 `C...` 또는 `G...` 값이 채널 ID입니다.
+
+출처 링크를 저장하려면 같은 데이터소스 폼의 `Slack 워크스페이스 URL`에 Slack 웹 주소를 입력합니다. 예를 들어 Slack 웹 주소가 `https://example.slack.com/archives/C123...` 형태라면 `https://example.slack.com`을 입력합니다. 전체 메시지 URL을 붙여 넣어도 서버는 `https://example.slack.com` origin만 저장합니다. `https://app.slack.com/client/...` 주소는 출처 링크 조립에 필요한 워크스페이스별 subdomain이 아니므로 사용할 수 없습니다.
+
+Slack 데이터소스가 생성된 뒤에는 `message.channels` 또는 `message.groups` 이벤트가 들어올 때 일치하는 채널 ID의 데이터소스에 메시지를 즉시 upsert합니다. 수동 수집 버튼은 기존 채널 기록을 채우거나 장애 이후 누락분을 복구하는 백필 용도로 유지합니다.
+
 ## HTTP Events API로 전환할 때
 
 운영 규모가 커지고 공개 HTTPS endpoint를 안정적으로 운영하게 되면 HTTP Events API로 전환할 수 있습니다.
+다만 현재 HTTP endpoint는 URL verification과 서명 검증 확인용이며, `app_mention`, `message.channels`, `message.groups` 이벤트 처리는 Socket Mode 경로에만 연결되어 있습니다. 실제 운영 전환 전에는 HTTP endpoint에도 동일한 이벤트 dispatch를 연결해야 합니다.
 그때는 `Socket Mode`를 끄고 `Event Subscriptions`의 `Request URL`을 다음 형식으로 설정합니다.
 
 ```text

@@ -50,7 +50,7 @@ class ChatApplicationServiceRaceTest {
             .thenThrow(new DataIntegrityViolationException("duplicate session"));
         when(messages.save(any(ChatMessageEntity.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
-        when(retrieval.retrieve(workspaceId, principalKeys, "question", 5))
+        when(retrieval.retrieve(workspaceId, principalKeys, "question", "question", 5))
             .thenReturn(List.of());
         when(llm.generate("question", List.of()))
             .thenReturn("answer");

@@ -1,5 +1,6 @@
 package com.mydata.slackbot;
 
+import com.mydata.connectors.slack.SlackMessageTextExtractor;
 import com.slack.api.bolt.App;
 import com.slack.api.bolt.AppConfig;
 import com.slack.api.bolt.jakarta_socket_mode.SocketModeApp;
@@ -12,9 +13,14 @@ import java.util.regex.Pattern;
 @Component
 public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFactory {
     private final SlackSocketModeEventHandler eventHandler;
+    private final SlackMessageTextExtractor textExtractor;
 
-    public BoltSlackSocketModeClientFactory(SlackSocketModeEventHandler eventHandler) {
+    public BoltSlackSocketModeClientFactory(
+        SlackSocketModeEventHandler eventHandler,
+        SlackMessageTextExtractor textExtractor
+    ) {
         this.eventHandler = eventHandler;
+        this.textExtractor = textExtractor;
     }
 
     @Override
@@ -40,6 +46,17 @@ public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFa
 
         app.event(MessageEvent.class, (payload, context) -> {
             MessageEvent event = payload.getEvent();
+            if (isCollectableChannelMessage(event, context.getBotUserId(), context.getBotId())) {
+                eventHandler.handleChannelMessage(
+                    firstNonBlank(payload.getTeamId(), event.getTeam()),
+                    event.getChannel(),
+                    event.getUser(),
+                    textExtractor.extract(event.getText(), event.getBlocks(), event.getAttachments()),
+                    event.getTs(),
+                    event.getThreadTs(),
+                    event.getChannelType()
+                );
+            }
             if (isDirectUserMessage(event)) {
                 eventHandler.handleDirectMessage(
                     firstNonBlank(payload.getTeamId(), event.getTeam()),
@@ -69,6 +86,24 @@ public class BoltSlackSocketModeClientFactory implements SlackSocketModeClientFa
             && !isBlank(event.getUser())
             && isBlank(event.getBotId())
             && event.getEdited() == null;
+    }
+
+    static boolean isCollectableChannelMessage(MessageEvent event, String botUserId) {
+        return isCollectableChannelMessage(event, botUserId, null);
+    }
+
+    static boolean isCollectableChannelMessage(MessageEvent event, String botUserId, String botId) {
+        return event != null
+            && ("channel".equals(event.getChannelType()) || "group".equals(event.getChannelType()))
+            && !isBlank(event.getChannel())
+            && !isBlank(event.getTs())
+            && event.getEdited() == null
+            && !isOwnBotMessage(event, botUserId, botId);
+    }
+
+    private static boolean isOwnBotMessage(MessageEvent event, String botUserId, String botId) {
+        return (!isBlank(botUserId) && botUserId.equals(event.getUser()))
+            || (!isBlank(botId) && botId.equals(event.getBotId()));
     }
 
     static String stripLeadingBotMention(String text, String botUserId) {

@@ -15,7 +15,8 @@ class SlackSocketModeEventHandlerTest {
     @Test
     void forwardsAppMentionWithThreadTimestampWhenPresent() {
         RecordingQuestionConsumer consumer = new RecordingQuestionConsumer();
-        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, new SyncTaskExecutor());
+        RecordingMessageConsumer messageConsumer = new RecordingMessageConsumer();
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, messageConsumer, new SyncTaskExecutor());
 
         handler.handleAppMention("T123", "C456", "U789", "질문입니다", "1710000000.000000", "1710000001.000000");
 
@@ -35,7 +36,11 @@ class SlackSocketModeEventHandlerTest {
     @Test
     void usesMessageTimestampAsThreadIdWhenThreadTimestampIsMissing() {
         RecordingQuestionConsumer consumer = new RecordingQuestionConsumer();
-        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, new SyncTaskExecutor());
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(
+            consumer,
+            new RecordingMessageConsumer(),
+            new SyncTaskExecutor()
+        );
 
         handler.handleDirectMessage("T123", "D456", "U789", "DM 질문", "1710000000.000000", " ");
 
@@ -51,7 +56,11 @@ class SlackSocketModeEventHandlerTest {
     @Test
     void ignoresBlankQuestionText() {
         RecordingQuestionConsumer consumer = new RecordingQuestionConsumer();
-        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, new SyncTaskExecutor());
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(
+            consumer,
+            new RecordingMessageConsumer(),
+            new SyncTaskExecutor()
+        );
 
         handler.handleAppMention("T123", "C456", "U789", " ", "1710000000.000000", null);
 
@@ -61,8 +70,9 @@ class SlackSocketModeEventHandlerTest {
     @Test
     void schedulesQuestionProcessingWithoutWaitingForConsumer() {
         RecordingQuestionConsumer consumer = new RecordingQuestionConsumer();
+        RecordingMessageConsumer messageConsumer = new RecordingMessageConsumer();
         QueuingTaskExecutor executor = new QueuingTaskExecutor();
-        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, executor);
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(consumer, messageConsumer, executor);
 
         handler.handleAppMention("T123", "C456", "U789", "질문입니다", "1710000000.000000", null);
 
@@ -85,6 +95,8 @@ class SlackSocketModeEventHandlerTest {
         SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(
             event -> {
             },
+            event -> {
+            },
             rejectingExecutor
         );
 
@@ -98,11 +110,69 @@ class SlackSocketModeEventHandlerTest {
         ));
     }
 
+    @Test
+    void forwardsChannelMessageForIngestion() {
+        RecordingQuestionConsumer questionConsumer = new RecordingQuestionConsumer();
+        RecordingMessageConsumer messageConsumer = new RecordingMessageConsumer();
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(
+            questionConsumer,
+            messageConsumer,
+            new SyncTaskExecutor()
+        );
+
+        handler.handleChannelMessage(
+            "T123",
+            "C456",
+            "U789",
+            "채널 메시지",
+            "1710000000.000000",
+            "1710000001.000000",
+            "channel"
+        );
+
+        assertThat(questionConsumer.events).isEmpty();
+        assertThat(messageConsumer.events)
+            .hasSize(1)
+            .first()
+            .satisfies(event -> {
+                assertThat(event.teamId()).isEqualTo("T123");
+                assertThat(event.channelId()).isEqualTo("C456");
+                assertThat(event.userId()).isEqualTo("U789");
+                assertThat(event.text()).isEqualTo("채널 메시지");
+                assertThat(event.messageTimestamp()).isEqualTo("1710000000.000000");
+                assertThat(event.threadTimestamp()).isEqualTo("1710000001.000000");
+                assertThat(event.channelType()).isEqualTo("channel");
+            });
+    }
+
+    @Test
+    void ignoresBlankChannelMessageTextForIngestion() {
+        RecordingMessageConsumer messageConsumer = new RecordingMessageConsumer();
+        SlackSocketModeEventHandler handler = new SlackSocketModeEventHandler(
+            new RecordingQuestionConsumer(),
+            messageConsumer,
+            new SyncTaskExecutor()
+        );
+
+        handler.handleChannelMessage("T123", "C456", "U789", " ", "1710000000.000000", null, "channel");
+
+        assertThat(messageConsumer.events).isEmpty();
+    }
+
     private static class RecordingQuestionConsumer implements SlackQuestionEventConsumer {
         List<SlackQuestionEvent> events = new ArrayList<>();
 
         @Override
         public void accept(SlackQuestionEvent event) {
+            events.add(event);
+        }
+    }
+
+    private static class RecordingMessageConsumer implements SlackMessageEventConsumer {
+        List<SlackMessageIngestionEvent> events = new ArrayList<>();
+
+        @Override
+        public void accept(SlackMessageIngestionEvent event) {
             events.add(event);
         }
     }
