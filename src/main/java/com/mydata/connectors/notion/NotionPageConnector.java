@@ -62,8 +62,21 @@ public class NotionPageConnector implements DataSourceConnector {
         NotionApiClient.NotionDatabase database = notionClient.retrieveDatabase(databaseId);
         NotionApiClient.NotionDataSource dataSource = singleDataSource(database);
         String databaseTitle = titleOrFallback(database.title(), database.id());
+        Set<String> visitedPageIds = new HashSet<>();
         for (NotionApiClient.NotionPage page : notionClient.queryDataSourcePages(dataSource.id())) {
-            fetchDatabaseRow(database, databaseTitle, dataSource, page, principalKey, handler);
+            fetchDatabasePage(
+                database,
+                databaseTitle,
+                dataSource,
+                page,
+                null,
+                databaseTitle,
+                List.of(databaseTitle),
+                1,
+                principalKey,
+                handler,
+                visitedPageIds
+            );
         }
     }
 
@@ -74,19 +87,29 @@ public class NotionPageConnector implements DataSourceConnector {
         return database.dataSources().getFirst();
     }
 
-    private void fetchDatabaseRow(
+    private void fetchDatabasePage(
         NotionApiClient.NotionDatabase database,
         String databaseTitle,
         NotionApiClient.NotionDataSource dataSource,
         NotionApiClient.NotionPage page,
+        String parentPageId,
+        String parentTitle,
+        List<String> parentPath,
+        int depth,
         String principalKey,
-        DocumentHandler handler
+        DocumentHandler handler,
+        Set<String> visitedPageIds
     ) {
+        if (!visitedPageIds.add(page.id())) {
+            return;
+        }
+
         String title = titleOrFallback(page);
-        List<String> path = List.of(databaseTitle, title);
+        List<String> path = new ArrayList<>(parentPath);
+        path.add(title);
         PageContent pageContent = collectPageContent(page.id());
         String text = documentText(title, page.properties(), pageContent.lines());
-        Map<String, Object> metadata = metadata(page, null, null, databaseTitle, path, 1);
+        Map<String, Object> metadata = metadata(page, null, parentPageId, parentTitle, path, depth);
         metadata.put("notionDatabaseId", database.id());
         metadata.put("notionDatabaseTitle", databaseTitle);
         metadata.put("notionDataSourceId", dataSource.id());
@@ -105,6 +128,23 @@ public class NotionPageConnector implements DataSourceConnector {
             new RawContent(text, MIME_TYPE),
             List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
         ));
+
+        for (String childPageId : pageContent.childPageIds()) {
+            NotionApiClient.NotionPage childPage = notionClient.retrievePage(childPageId);
+            fetchDatabasePage(
+                database,
+                databaseTitle,
+                dataSource,
+                childPage,
+                page.id(),
+                title,
+                path,
+                depth + 1,
+                principalKey,
+                handler,
+                visitedPageIds
+            );
+        }
     }
 
     private void fetchPage(

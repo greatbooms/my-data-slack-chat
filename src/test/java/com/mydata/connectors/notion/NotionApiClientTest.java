@@ -144,6 +144,42 @@ class NotionApiClientTest {
                             "Status": {
                               "type": "select",
                               "select": { "name": "Done" }
+                            },
+                            "Task ID": {
+                              "type": "unique_id",
+                              "unique_id": { "prefix": "TASK", "number": 7 }
+                            },
+                            "Created": {
+                              "type": "created_time",
+                              "created_time": "2026-06-01T00:00:00.000Z"
+                            },
+                            "Created by": {
+                              "type": "created_by",
+                              "created_by": { "object": "user", "id": "user-alice", "name": "Alice" }
+                            },
+                            "Last edited": {
+                              "type": "last_edited_time",
+                              "last_edited_time": "2026-06-03T00:00:00.000Z"
+                            },
+                            "Edited by": {
+                              "type": "last_edited_by",
+                              "last_edited_by": { "object": "user", "id": "user-bob" }
+                            },
+                            "Rollup summary": {
+                              "type": "rollup",
+                              "rollup": {
+                                "type": "array",
+                                "array": [
+                                  {
+                                    "type": "rich_text",
+                                    "rich_text": [ { "plain_text": "Parent project" } ]
+                                  },
+                                  {
+                                    "type": "number",
+                                    "number": 3
+                                  }
+                                ]
+                              }
                             }
                           }
                         }
@@ -188,6 +224,13 @@ class NotionApiClientTest {
             .containsExactly("row-1", "row-2");
         assertThat(pages.get(0).title()).isEqualTo("First task");
         assertThat(pages.get(0).properties()).containsEntry("Status", "Done");
+        assertThat(pages.get(0).properties())
+            .containsEntry("Task ID", "TASK-7")
+            .containsEntry("Created", "2026-06-01T00:00:00.000Z")
+            .containsEntry("Created by", "Alice")
+            .containsEntry("Last edited", "2026-06-03T00:00:00.000Z")
+            .containsEntry("Edited by", "user-bob")
+            .containsEntry("Rollup summary", "Parent project, 3");
         assertThat(pages.get(1).properties()).containsEntry("Done", "true");
         assertThat(requests).hasSize(2);
         assertThat(requests.get(0))

@@ -308,6 +308,10 @@ public class NotionApiClient implements NotionClient {
             case "relation" -> joinIds(typed);
             case "files" -> joinNames(typed);
             case "formula" -> extractFormulaPlainText(typed);
+            case "unique_id" -> uniqueIdText(typed);
+            case "created_time", "last_edited_time" -> typed.asString("");
+            case "created_by", "last_edited_by" -> userText(typed);
+            case "rollup" -> extractRollupPlainText(typed);
             default -> "";
         };
         return blankToNull(value);
@@ -323,6 +327,40 @@ public class NotionApiClient implements NotionClient {
             case "date" -> dateText(typed);
             default -> "";
         };
+    }
+
+    private String extractRollupPlainText(JsonNode rollup) {
+        String type = rollup.path("type").asString();
+        JsonNode typed = rollup.path(type);
+        return switch (type) {
+            case "array" -> joinPropertyValues(typed);
+            case "date" -> dateText(typed);
+            case "number" -> typed.isNumber() ? typed.asString() : "";
+            default -> "";
+        };
+    }
+
+    private String uniqueIdText(JsonNode uniqueId) {
+        String prefix = blankToNull(uniqueId.path("prefix").asString(null));
+        String number = uniqueId.path("number").isNumber() ? uniqueId.path("number").asString() : "";
+        if (number.isBlank()) {
+            return prefix == null ? "" : prefix;
+        }
+        return prefix == null ? number : prefix + "-" + number;
+    }
+
+    private String joinPropertyValues(JsonNode array) {
+        if (!array.isArray()) {
+            return "";
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonNode item : array) {
+            String value = extractPropertyPlainText(item);
+            if (value != null) {
+                values.add(value);
+            }
+        }
+        return String.join(", ", values);
     }
 
     private String dateText(JsonNode date) {
@@ -360,6 +398,14 @@ public class NotionApiClient implements NotionClient {
             }
         }
         return String.join(", ", ids);
+    }
+
+    private String userText(JsonNode user) {
+        String name = blankToNull(user.path("name").asString(null));
+        if (name != null) {
+            return name;
+        }
+        return user.path("id").asString("");
     }
 
     private String joinPeople(JsonNode array) {

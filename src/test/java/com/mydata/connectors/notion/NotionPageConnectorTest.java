@@ -131,11 +131,16 @@ class NotionPageConnectorTest {
             new NotionApiClient.NotionDataSource("data-source-1", "Roadmap table"));
         notion.page("row-1", "First task", "https://notion.so/row-1", "data_source_id", "data-source-1",
             properties("Status", "Done", "Priority", "High"));
+        notion.page("row-child", "Nested detail", "https://notion.so/row-child", "page_id", "row-1", Map.of());
         notion.page("row-2", "Second task", "https://notion.so/row-2", "data_source_id", "data-source-1",
             properties("Done", "true"));
         notion.queryPages("data-source-1", "row-1", "row-2");
         notion.blocks("row-1",
-            block("row-1-block", "paragraph", "Implement database ingestion", false)
+            block("row-1-block", "paragraph", "Implement database ingestion", false),
+            block("row-child", "child_page", "Nested detail", false)
+        );
+        notion.blocks("row-child",
+            block("row-child-block", "paragraph", "Nested body", false)
         );
         notion.blocks("row-2");
         NotionPageConnector connector = new NotionPageConnector(notion);
@@ -145,7 +150,7 @@ class NotionPageConnectorTest {
 
         assertThat(documents)
             .extracting(RawExternalDocument::externalId)
-            .containsExactly("row-1", "row-2");
+            .containsExactly("row-1", "row-child", "row-2");
 
         RawExternalDocument first = documents.get(0);
         assertThat(first.title()).isEqualTo("First task");
@@ -155,6 +160,7 @@ class NotionPageConnectorTest {
             Status: Done
             Priority: High
             Implement database ingestion
+            Nested detail
             """.stripTrailing());
         assertThat(first.metadata())
             .containsEntry("notionPageId", "row-1")
@@ -170,7 +176,27 @@ class NotionPageConnectorTest {
         assertThat(first.aclEntries()).singleElement()
             .satisfies(acl -> assertThat(acl.principalKey()).isEqualTo(PrincipalKeys.user(ownerId)));
 
-        RawExternalDocument second = documents.get(1);
+        RawExternalDocument nested = documents.get(1);
+        assertThat(nested.title()).isEqualTo("Nested detail");
+        assertThat(nested.content().text()).isEqualTo("""
+            Nested detail
+            Nested body
+            """.stripTrailing());
+        assertThat(nested.metadata())
+            .containsEntry("notionPageId", "row-child")
+            .containsEntry("notionDatabaseId", "database-1")
+            .containsEntry("notionDatabaseTitle", "Roadmap")
+            .containsEntry("notionDataSourceId", "data-source-1")
+            .containsEntry("notionDataSourceName", "Roadmap table")
+            .containsEntry("notionParentPageId", "row-1")
+            .containsEntry("notionParentTitle", "First task")
+            .containsEntry("notionDepth", 2)
+            .containsEntry("notionPath", List.of("Roadmap", "First task", "Nested detail"))
+            .containsEntry("notionApiParentType", "page_id")
+            .containsEntry("notionApiParentId", "row-1");
+        assertThat(nested.metadata()).doesNotContainKey("notionRootPageId");
+
+        RawExternalDocument second = documents.get(2);
         assertThat(second.content().text()).isEqualTo("""
             Second task
             Done: true
