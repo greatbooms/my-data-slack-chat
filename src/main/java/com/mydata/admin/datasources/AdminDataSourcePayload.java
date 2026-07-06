@@ -18,6 +18,7 @@ public record AdminDataSourcePayload(
     SyncMode syncMode,
     DataSourceVisibility visibility,
     String notionRootPageId,
+    String notionDatabaseId,
     String slackChannelId,
     String slackWorkspaceUrl,
     String lastSyncedAt,
@@ -35,11 +36,16 @@ public record AdminDataSourcePayload(
             dataSource.getStatus(),
             dataSource.getSyncMode(),
             dataSource.getVisibility(),
-            dataSource.configValue("notionRootPageId"),
-            dataSource.configValue("slackChannelId"),
-            dataSource.configValue("slackWorkspaceUrl"),
+            blankToNull(dataSource.configValue("notionRootPageId")),
+            blankToNull(dataSource.configValue("notionDatabaseId")),
+            blankToNull(dataSource.configValue("slackChannelId")),
+            blankToNull(dataSource.configValue("slackWorkspaceUrl")),
             lastSyncedAt,
             deletedAt
         );
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

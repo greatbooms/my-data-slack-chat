@@ -84,6 +84,186 @@ class NotionApiClientTest {
     }
 
     @Test
+    void retrieveDatabaseSendsRequiredHeadersAndParsesDataSources() {
+        server.createContext("/v1/databases/database-1", exchange -> {
+            requests.add(exchange.getRequestMethod() + " " + exchange.getRequestURI()
+                + " auth=" + exchange.getRequestHeaders().getFirst("Authorization")
+                + " version=" + exchange.getRequestHeaders().getFirst("Notion-Version"));
+            respond(exchange, 200, """
+                {
+                  "id": "database-1",
+                  "url": "https://notion.so/database-1",
+                  "title": [
+                    { "plain_text": "Roadmap" }
+                  ],
+                  "data_sources": [
+                    { "id": "data-source-1", "name": "Main view" }
+                  ]
+                }
+                """);
+        });
+        NotionApiClient client = client();
+
+        NotionApiClient.NotionDatabase database = client.retrieveDatabase("database-1");
+
+        assertThat(database.id()).isEqualTo("database-1");
+        assertThat(database.title()).isEqualTo("Roadmap");
+        assertThat(database.url()).isEqualTo("https://notion.so/database-1");
+        assertThat(database.dataSources()).singleElement()
+            .satisfies(dataSource -> {
+                assertThat(dataSource.id()).isEqualTo("data-source-1");
+                assertThat(dataSource.name()).isEqualTo("Main view");
+            });
+        assertThat(requests)
+            .containsExactly("GET /v1/databases/database-1 auth=Bearer notion-token version=2026-03-11");
+    }
+
+    @Test
+    void queryDataSourcePagesPostsPageFilterAndFollowsPagination() {
+        server.createContext("/v1/data_sources/data-source-1/query", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            requests.add(exchange.getRequestMethod() + " " + exchange.getRequestURI() + " body=" + body);
+            if (!body.contains("start_cursor")) {
+                respond(exchange, 200, """
+                    {
+                      "has_more": true,
+                      "next_cursor": "cursor-2",
+                      "request_status": { "type": "complete" },
+                      "results": [
+                        {
+                          "object": "page",
+                          "id": "row-1",
+                          "url": "https://notion.so/row-1",
+                          "created_time": "2026-06-01T00:00:00.000Z",
+                          "last_edited_time": "2026-06-03T00:00:00.000Z",
+                          "properties": {
+                            "Name": {
+                              "type": "title",
+                              "title": [ { "plain_text": "First task" } ]
+                            },
+                            "Status": {
+                              "type": "select",
+                              "select": { "name": "Done" }
+                            },
+                            "Task ID": {
+                              "type": "unique_id",
+                              "unique_id": { "prefix": "TASK", "number": 7 }
+                            },
+                            "Created": {
+                              "type": "created_time",
+                              "created_time": "2026-06-01T00:00:00.000Z"
+                            },
+                            "Created by": {
+                              "type": "created_by",
+                              "created_by": { "object": "user", "id": "user-alice", "name": "Alice" }
+                            },
+                            "Last edited": {
+                              "type": "last_edited_time",
+                              "last_edited_time": "2026-06-03T00:00:00.000Z"
+                            },
+                            "Edited by": {
+                              "type": "last_edited_by",
+                              "last_edited_by": { "object": "user", "id": "user-bob" }
+                            },
+                            "Rollup summary": {
+                              "type": "rollup",
+                              "rollup": {
+                                "type": "array",
+                                "array": [
+                                  {
+                                    "type": "rich_text",
+                                    "rich_text": [ { "plain_text": "Parent project" } ]
+                                  },
+                                  {
+                                    "type": "number",
+                                    "number": 3
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                    """);
+                return;
+            }
+            respond(exchange, 200, """
+                {
+                  "has_more": false,
+                  "next_cursor": null,
+                  "request_status": { "type": "complete" },
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "row-2",
+                      "url": "https://notion.so/row-2",
+                      "created_time": "2026-06-02T00:00:00.000Z",
+                      "last_edited_time": "2026-06-04T00:00:00.000Z",
+                      "properties": {
+                        "Name": {
+                          "type": "title",
+                          "title": [ { "plain_text": "Second task" } ]
+                        },
+                        "Done": {
+                          "type": "checkbox",
+                          "checkbox": true
+                        }
+                      }
+                    }
+                  ]
+                }
+                """);
+        });
+        NotionApiClient client = client();
+
+        List<NotionApiClient.NotionPage> pages = client.queryDataSourcePages("data-source-1");
+
+        assertThat(pages)
+            .extracting(NotionApiClient.NotionPage::id)
+            .containsExactly("row-1", "row-2");
+        assertThat(pages.get(0).title()).isEqualTo("First task");
+        assertThat(pages.get(0).properties()).containsEntry("Status", "Done");
+        assertThat(pages.get(0).properties())
+            .containsEntry("Task ID", "TASK-7")
+            .containsEntry("Created", "2026-06-01T00:00:00.000Z")
+            .containsEntry("Created by", "Alice")
+            .containsEntry("Last edited", "2026-06-03T00:00:00.000Z")
+            .containsEntry("Edited by", "user-bob")
+            .containsEntry("Rollup summary", "Parent project, 3");
+        assertThat(pages.get(1).properties()).containsEntry("Done", "true");
+        assertThat(requests).hasSize(2);
+        assertThat(requests.get(0))
+            .contains("POST /v1/data_sources/data-source-1/query")
+            .contains("\"result_type\":\"page\"")
+            .contains("\"page_size\":100")
+            .doesNotContain("start_cursor");
+        assertThat(requests.get(1))
+            .contains("\"start_cursor\":\"cursor-2\"");
+    }
+
+    @Test
+    void queryDataSourcePagesThrowsWhenResultIsIncomplete() {
+        server.createContext("/v1/data_sources/data-source-1/query", exchange -> respond(exchange, 200, """
+            {
+              "has_more": false,
+              "next_cursor": null,
+              "request_status": {
+                "type": "incomplete",
+                "incomplete_reason": "query_result_limit_reached"
+              },
+              "results": []
+            }
+            """));
+        NotionApiClient client = client();
+
+        assertThatThrownBy(() -> client.queryDataSourcePages("data-source-1"))
+            .isInstanceOf(NotionApiException.class)
+            .hasMessageContaining("query_result_limit_reached")
+            .hasMessageNotContaining("notion-token");
+    }
+
+    @Test
     void listBlockChildrenFollowsPagination() {
         server.createContext("/v1/blocks/root/children", exchange -> {
             requests.add(exchange.getRequestURI().toString());

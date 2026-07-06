@@ -10,8 +10,12 @@ import type {
   WorkspaceFieldsFragment
 } from '../generated/graphql';
 
+type NotionRootKind = 'PAGE' | 'DATABASE';
+
 export type DataSourceFormValues = {
   name: string;
+  notionDatabaseId: string;
+  notionRootKind: NotionRootKind;
   notionRootPageId: string;
   ownerUserId: string;
   slackChannelId: string;
@@ -132,15 +136,41 @@ function DataSourceFormDialog({
           </label>
 
           {values.type === 'NOTION' ? (
-            <label>
-              Notion 루트 페이지 ID
-              <input
-                value={values.notionRootPageId}
-                disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
-                required
-                onChange={(event) => setValues({ ...values, notionRootPageId: event.target.value })}
-              />
-            </label>
+            <>
+              <label>
+                Notion 수집 대상
+                <select
+                  value={values.notionRootKind}
+                  disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
+                  onChange={(event) => setValues({ ...values, notionRootKind: event.target.value as NotionRootKind })}
+                >
+                  <option value="PAGE">페이지</option>
+                  <option value="DATABASE">데이터베이스</option>
+                </select>
+              </label>
+              {values.notionRootKind === 'PAGE' ? (
+                <label>
+                  Notion 루트 페이지 ID
+                  <input
+                    value={values.notionRootPageId}
+                    disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
+                    required
+                    onChange={(event) => setValues({ ...values, notionRootPageId: event.target.value })}
+                  />
+                </label>
+              ) : (
+                <label>
+                  Notion 데이터베이스 링크 또는 ID
+                  <input
+                    value={values.notionDatabaseId}
+                    disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
+                    placeholder="https://www.notion.so/workspace/Database-..."
+                    required
+                    onChange={(event) => setValues({ ...values, notionDatabaseId: event.target.value })}
+                  />
+                </label>
+              )}
+            </>
           ) : null}
 
           {values.type === 'SLACK' ? (
@@ -221,6 +251,8 @@ function DataSourceFormDialog({
 function createInitialValues(dataSource: DataSourceFieldsFragment | null): DataSourceFormValues {
   return {
     name: dataSource?.name ?? '',
+    notionDatabaseId: dataSource?.notionDatabaseId ?? '',
+    notionRootKind: dataSource?.notionDatabaseId ? 'DATABASE' : 'PAGE',
     notionRootPageId: dataSource?.notionRootPageId ?? '',
     ownerUserId: dataSource?.ownerUserId ?? '',
     slackChannelId: dataSource?.slackChannelId ?? '',

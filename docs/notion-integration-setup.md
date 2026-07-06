@@ -1,6 +1,6 @@
-# Notion Integration 키 발급과 페이지 연결
+# Notion Integration 키 발급과 페이지/데이터베이스 연결
 
-이 문서는 로컬 개발에서 `NOTION` 데이터소스를 수집하기 위해 Notion integration token과 루트 페이지 ID를 준비하는 절차입니다.
+이 문서는 로컬 개발에서 `NOTION` 데이터소스를 수집하기 위해 Notion integration token과 페이지 ID 또는 데이터베이스 링크/ID를 준비하는 절차입니다.
 
 ## 1. Internal connection 만들기
 
@@ -30,25 +30,25 @@ NOTION_BASE_URL=https://api.notion.com
 - `.env`는 커밋하지 않습니다.
 - token이 노출되면 Notion Developer Portal에서 token을 refresh한 뒤 `.env`를 갱신합니다.
 
-## 3. 수집할 페이지에 connection 초대하기
+## 3. 수집할 페이지 또는 데이터베이스에 connection 초대하기
 
-Notion connection은 생성 직후 아무 페이지에도 접근할 수 없습니다. 수집할 루트 페이지에 명시적으로 접근 권한을 줘야 합니다.
+Notion connection은 생성 직후 아무 페이지나 데이터베이스에도 접근할 수 없습니다. 수집할 루트 페이지 또는 원본 데이터베이스에 명시적으로 접근 권한을 줘야 합니다.
 
 방법 A: Notion 화면에서 연결
 
-1. 수집할 루트 페이지를 엽니다.
+1. 수집할 루트 페이지 또는 원본 데이터베이스를 엽니다.
 2. 우측 상단 `...` 메뉴를 엽니다.
 3. `Connections` 또는 `+ Add connection`을 선택합니다.
 4. 방금 만든 connection을 검색해서 추가합니다.
-5. 하위 페이지 접근을 허용하는 확인 창이 나오면 승인합니다.
+5. 하위 페이지나 데이터베이스 row 접근을 허용하는 확인 창이 나오면 승인합니다.
 
 방법 B: Developer Portal에서 연결
 
 1. connection 상세 화면의 `Content access` 탭을 엽니다.
 2. `Edit access`를 누릅니다.
-3. 수집할 페이지나 데이터베이스를 선택합니다.
+3. 수집할 페이지나 원본 데이터베이스를 선택합니다.
 
-루트 페이지에 connection을 추가하면 하위 페이지 접근도 함께 상속됩니다.
+루트 페이지에 connection을 추가하면 하위 페이지 접근도 함께 상속됩니다. 데이터베이스를 수집할 때는 linked database가 아니라 원본 데이터베이스에 connection을 추가해야 합니다.
 
 ## 4. Notion 루트 페이지 ID 확인하기
 
@@ -72,7 +72,31 @@ https://www.notion.so/workspace/Project-Brief-0123456789abcdef0123456789abcdef
 01234567-89ab-cdef-0123-456789abcdef
 ```
 
-## 5. 이 프로젝트에서 데이터소스 만들기
+## 5. Notion 데이터베이스 링크 또는 ID 확인하기
+
+관리자 화면에서 `Notion 수집 대상`을 `데이터베이스`로 선택하면 `Notion 데이터베이스 링크 또는 ID`를 입력합니다.
+
+가장 쉬운 방법:
+
+1. Notion에서 원본 데이터베이스를 full page로 엽니다.
+2. 우측 상단 `Share`에서 링크를 복사합니다.
+3. 복사한 링크 전체를 관리자 화면에 붙여 넣습니다.
+
+데이터베이스 URL 예시:
+
+```text
+https://www.notion.so/workspace/Roadmap-248104cd477e80fdb757e945d38000bd?v=248104cd477e80afbc30000bd28de8f9
+```
+
+서버는 URL path에 있는 database ID만 추출해 저장합니다. 위 예시에서 저장되는 값은 다음과 같습니다.
+
+```text
+248104cd-477e-80fd-b757-e945d38000bd
+```
+
+Notion API `2026-03-11`에서는 데이터베이스와 data source가 분리되어 있습니다. 이 프로젝트는 사용자가 database 링크/ID를 입력하면 서버가 Notion API로 연결된 data source ID를 찾아 row page를 수집합니다. 데이터베이스에 data source가 여러 개 있으면 현재 버전에서는 어느 data source를 쓸지 자동 선택하지 않고 수집을 실패시킵니다.
+
+## 6. 이 프로젝트에서 데이터소스 만들기
 
 1. `.env`를 로드한 뒤 서버를 실행합니다.
 
@@ -85,11 +109,15 @@ set +a
 
 2. 관리자 화면에서 데이터소스를 추가합니다.
 3. `종류`는 `NOTION`을 선택합니다.
-4. `Notion 루트 페이지 ID`에 위에서 확인한 페이지 ID를 입력합니다.
-5. 저장 후 수동 수집을 실행합니다.
+4. `Notion 수집 대상`에서 `페이지` 또는 `데이터베이스`를 선택합니다.
+5. 페이지를 선택한 경우 `Notion 루트 페이지 ID`에 위에서 확인한 페이지 ID를 입력합니다.
+6. 데이터베이스를 선택한 경우 `Notion 데이터베이스 링크 또는 ID`에 복사한 데이터베이스 링크나 ID를 입력합니다.
+7. 저장 후 수동 수집을 실행합니다.
 
-## 6. 자주 나는 오류
+## 7. 자주 나는 오류
 
 - `object_not_found`: connection이 해당 페이지에 초대되지 않았거나 페이지 ID가 틀렸을 가능성이 큽니다.
+- 데이터베이스 수집의 `object_not_found`: 원본 데이터베이스에 connection이 초대되지 않았거나 linked database 링크를 넣었을 가능성이 큽니다.
 - `unauthorized`: `NOTION_API_TOKEN` 값이 비었거나 잘못됐을 가능성이 큽니다.
-- 수집 결과가 비어 있음: 현재 커넥터는 텍스트 블록과 하위 페이지를 중심으로 평탄화합니다. 이미지, 파일, 임베드 같은 비텍스트 블록은 본문 텍스트로 저장하지 않습니다.
+- `data source가 1개여야 합니다`: 입력한 데이터베이스에 data source가 여러 개 있습니다. 현재 버전에서는 하나의 data source만 가진 데이터베이스를 지원합니다.
+- 수집 결과가 비어 있음: 현재 커넥터는 텍스트 블록, 하위 페이지, 데이터베이스 row page의 주요 속성값을 중심으로 평탄화합니다. 이미지, 파일, 임베드 같은 비텍스트 블록은 본문 텍스트로 저장하지 않습니다.

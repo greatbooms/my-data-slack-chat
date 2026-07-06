@@ -25,6 +25,7 @@ import java.util.Set;
 @Component
 public class NotionPageConnector implements DataSourceConnector {
     public static final String ROOT_PAGE_ID_CONFIG_KEY = "notionRootPageId";
+    public static final String DATABASE_ID_CONFIG_KEY = "notionDatabaseId";
     private static final String MIME_TYPE = "text/plain";
 
     private final NotionClient notionClient;
@@ -40,11 +41,110 @@ public class NotionPageConnector implements DataSourceConnector {
 
     @Override
     public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
-        String rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
         String principalKey = principalKey(dataSource);
+        String rootPageId = optionalConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
+        String databaseId = optionalConfig(dataSource, DATABASE_ID_CONFIG_KEY);
 
+        if (rootPageId != null && databaseId != null) {
+            throw new IllegalArgumentException("NOTION 설정은 notionRootPageId 또는 notionDatabaseId 중 하나만 사용할 수 있습니다");
+        }
+        if (databaseId != null) {
+            fetchDatabase(databaseId, principalKey, handler);
+            return cursor;
+        }
+
+        rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
         fetchPage(rootPageId, rootPageId, null, null, List.of(), 0, principalKey, handler, new HashSet<>());
         return cursor;
+    }
+
+    private void fetchDatabase(String databaseId, String principalKey, DocumentHandler handler) {
+        NotionApiClient.NotionDatabase database = notionClient.retrieveDatabase(databaseId);
+        NotionApiClient.NotionDataSource dataSource = singleDataSource(database);
+        String databaseTitle = titleOrFallback(database.title(), database.id());
+        Set<String> visitedPageIds = new HashSet<>();
+        for (NotionApiClient.NotionPage page : notionClient.queryDataSourcePages(dataSource.id())) {
+            fetchDatabasePage(
+                database,
+                databaseTitle,
+                dataSource,
+                page,
+                null,
+                databaseTitle,
+                List.of(databaseTitle),
+                1,
+                principalKey,
+                handler,
+                visitedPageIds
+            );
+        }
+    }
+
+    private NotionApiClient.NotionDataSource singleDataSource(NotionApiClient.NotionDatabase database) {
+        if (database.dataSources().size() != 1) {
+            throw new IllegalArgumentException("Notion database의 data source가 1개여야 합니다");
+        }
+        return database.dataSources().getFirst();
+    }
+
+    private void fetchDatabasePage(
+        NotionApiClient.NotionDatabase database,
+        String databaseTitle,
+        NotionApiClient.NotionDataSource dataSource,
+        NotionApiClient.NotionPage page,
+        String parentPageId,
+        String parentTitle,
+        List<String> parentPath,
+        int depth,
+        String principalKey,
+        DocumentHandler handler,
+        Set<String> visitedPageIds
+    ) {
+        if (!visitedPageIds.add(page.id())) {
+            return;
+        }
+
+        String title = titleOrFallback(page);
+        List<String> path = new ArrayList<>(parentPath);
+        path.add(title);
+        PageContent pageContent = collectPageContent(page.id());
+        String text = documentText(title, page.properties(), pageContent.lines());
+        Map<String, Object> metadata = metadata(page, null, parentPageId, parentTitle, path, depth);
+        metadata.put("notionDatabaseId", database.id());
+        metadata.put("notionDatabaseTitle", databaseTitle);
+        metadata.put("notionDataSourceId", dataSource.id());
+        putIfPresent(metadata, "notionDataSourceName", dataSource.name());
+
+        handler.handle(new RawExternalDocument(
+            page.id(),
+            DataSourceType.NOTION,
+            title,
+            page.url(),
+            MIME_TYPE,
+            page.createdTime(),
+            page.lastEditedTime(),
+            sha256(text),
+            metadata,
+            new RawContent(text, MIME_TYPE),
+            List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
+        ));
+
+        for (String childPageId : pageContent.childPageIds()) {
+            NotionApiClient.NotionPage childPage = notionClient.retrievePage(childPageId);
+            fetchDatabasePage(
+                database,
+                databaseTitle,
+                dataSource,
+                childPage,
+                page.id(),
+                title,
+                path,
+                depth + 1,
+                principalKey,
+                handler,
+                visitedPageIds
+            );
+        }
     }
 
     private void fetchPage(
@@ -67,7 +167,7 @@ public class NotionPageConnector implements DataSourceConnector {
         List<String> path = new ArrayList<>(parentPath);
         path.add(title);
         PageContent pageContent = collectPageContent(pageId);
-        String text = documentText(title, pageContent.lines());
+        String text = documentText(title, page.properties(), pageContent.lines());
 
         handler.handle(new RawExternalDocument(
             page.id(),
@@ -98,7 +198,7 @@ public class NotionPageConnector implements DataSourceConnector {
     ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("notionPageId", page.id());
-        metadata.put("notionRootPageId", rootPageId);
+        putIfPresent(metadata, "notionRootPageId", rootPageId);
         if (parentPageId != null) {
             metadata.put("notionParentPageId", parentPageId);
         }
@@ -113,6 +213,9 @@ public class NotionPageConnector implements DataSourceConnector {
         metadata.put("notionInTrash", page.inTrash());
         putIfPresent(metadata, "notionCreatedByUserId", page.createdByUserId());
         putIfPresent(metadata, "notionLastEditedByUserId", page.lastEditedByUserId());
+        if (!page.properties().isEmpty()) {
+            metadata.put("notionProperties", new LinkedHashMap<>(page.properties()));
+        }
         return metadata;
     }
 
@@ -153,18 +256,23 @@ public class NotionPageConnector implements DataSourceConnector {
         }
     }
 
-    private String documentText(String title, List<String> lines) {
+    private String documentText(String title, Map<String, String> properties, List<String> lines) {
         List<String> allLines = new ArrayList<>();
         allLines.add(title);
+        properties.forEach((key, value) -> allLines.add(key + ": " + value));
         allLines.addAll(lines);
         return String.join("\n", allLines);
     }
 
     private String titleOrFallback(NotionApiClient.NotionPage page) {
-        if (page.title() != null && !page.title().isBlank()) {
-            return page.title().trim();
+        return titleOrFallback(page.title(), page.id());
+    }
+
+    private String titleOrFallback(String title, String fallback) {
+        if (title != null && !title.isBlank()) {
+            return title.trim();
         }
-        return page.id();
+        return fallback;
     }
 
     private String principalKey(DataSourceEntity dataSource) {
@@ -175,9 +283,17 @@ public class NotionPageConnector implements DataSourceConnector {
     }
 
     private String requiredConfig(DataSourceEntity dataSource, String key) {
+        String value = optionalConfig(dataSource, key);
+        if (value == null) {
+            throw new IllegalArgumentException("NOTION 설정값이 없습니다: " + key);
+        }
+        return value;
+    }
+
+    private String optionalConfig(DataSourceEntity dataSource, String key) {
         String value = dataSource.configValue(key);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("NOTION 설정값이 없습니다: " + key);
+            return null;
         }
         return value.trim();
     }

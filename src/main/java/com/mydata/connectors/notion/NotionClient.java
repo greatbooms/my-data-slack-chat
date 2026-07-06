@@ -5,5 +5,9 @@ import java.util.List;
 public interface NotionClient {
     NotionApiClient.NotionPage retrievePage(String pageId);
 
+    NotionApiClient.NotionDatabase retrieveDatabase(String databaseId);
+
+    List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId);
+
     List<NotionApiClient.NotionBlock> listBlockChildren(String blockId);
 }

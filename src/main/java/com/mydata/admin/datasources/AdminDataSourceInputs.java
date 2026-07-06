@@ -17,6 +17,7 @@ public final class AdminDataSourceInputs {
         DataSourceVisibility visibility,
         SyncMode syncMode,
         String notionRootPageId,
+        String notionDatabaseId,
         String slackChannelId,
         String slackWorkspaceUrl
     ) {
@@ -29,6 +30,7 @@ public final class AdminDataSourceInputs {
         DataSourceVisibility visibility,
         SyncMode syncMode,
         String notionRootPageId,
+        String notionDatabaseId,
         String slackChannelId,
         String slackWorkspaceUrl
     ) {

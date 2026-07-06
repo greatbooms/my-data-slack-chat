@@ -23,12 +23,18 @@ import org.springframework.transaction.annotation.Transactional;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class AdminDataSourceService {
     private static final String NOTION_ROOT_PAGE_ID_CONFIG_KEY = "notionRootPageId";
+    private static final String NOTION_DATABASE_ID_CONFIG_KEY = "notionDatabaseId";
     private static final String SLACK_CHANNEL_ID_CONFIG_KEY = "slackChannelId";
     private static final String SLACK_WORKSPACE_URL_CONFIG_KEY = "slackWorkspaceUrl";
+    private static final Pattern NOTION_ID_PATTERN = Pattern.compile(
+        "(?i)([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    );
 
     private final DataSourceRepository dataSources;
     private final WorkspaceRepository workspaces;
@@ -173,10 +179,7 @@ public class AdminDataSourceService {
 
     private static void applyCreateConfig(DataSourceEntity dataSource, CreateDataSourceInput input) {
         if (dataSource.getType() == DataSourceType.NOTION) {
-            dataSource.putConfig(
-                NOTION_ROOT_PAGE_ID_CONFIG_KEY,
-                requireText(input.notionRootPageId(), "notionRootPageId")
-            );
+            applyNotionConfig(dataSource, input.notionRootPageId(), input.notionDatabaseId());
         }
         if (dataSource.getType() == DataSourceType.SLACK) {
             dataSource.putConfig(
@@ -188,15 +191,12 @@ public class AdminDataSourceService {
     }
 
     private static void applyUpdateConfig(DataSourceEntity dataSource, UpdateDataSourceInput input) {
-        if (input.notionRootPageId() != null) {
+        if (input.notionRootPageId() != null || input.notionDatabaseId() != null) {
             if (dataSource.getType() != DataSourceType.NOTION) {
-                throw new IllegalArgumentException("notionRootPageId는 NOTION 데이터소스에서만 설정할 수 있습니다");
+                throw new IllegalArgumentException("Notion 설정은 NOTION 데이터소스에서만 설정할 수 있습니다");
             }
 
-            dataSource.putConfig(
-                NOTION_ROOT_PAGE_ID_CONFIG_KEY,
-                requireText(input.notionRootPageId(), "notionRootPageId")
-            );
+            applyNotionConfig(dataSource, input.notionRootPageId(), input.notionDatabaseId());
         }
 
         if (input.slackChannelId() != null) {
@@ -226,6 +226,26 @@ public class AdminDataSourceService {
         }
 
         dataSource.putConfig(SLACK_WORKSPACE_URL_CONFIG_KEY, normalizeHttpUrl(value, "slackWorkspaceUrl"));
+    }
+
+    private static void applyNotionConfig(DataSourceEntity dataSource, String rootPageId, String databaseId) {
+        boolean hasRootPageId = hasText(rootPageId);
+        boolean hasDatabaseId = hasText(databaseId);
+        if (!hasRootPageId && !hasDatabaseId) {
+            throw new IllegalArgumentException("NOTION 데이터소스는 notionRootPageId 또는 notionDatabaseId 중 하나를 설정해야 합니다");
+        }
+        if (hasRootPageId && hasDatabaseId) {
+            throw new IllegalArgumentException("NOTION 데이터소스는 notionRootPageId 또는 notionDatabaseId 중 하나만 설정해야 합니다");
+        }
+
+        if (hasRootPageId) {
+            dataSource.putConfig(NOTION_ROOT_PAGE_ID_CONFIG_KEY, requireText(rootPageId, "notionRootPageId"));
+            dataSource.putConfig(NOTION_DATABASE_ID_CONFIG_KEY, "");
+            return;
+        }
+
+        dataSource.putConfig(NOTION_ROOT_PAGE_ID_CONFIG_KEY, "");
+        dataSource.putConfig(NOTION_DATABASE_ID_CONFIG_KEY, normalizeNotionDatabaseId(databaseId));
     }
 
     private static DataSourceType requireType(DataSourceType type) {
@@ -275,6 +295,36 @@ public class AdminDataSourceService {
         } catch (Exception exception) {
             throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다", exception);
         }
+    }
+
+    private static String normalizeNotionDatabaseId(String value) {
+        String trimmed = requireText(value, "notionDatabaseId");
+        String candidateSource = trimmed;
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            URI uri;
+            try {
+                uri = URI.create(trimmed);
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException("notionDatabaseId 형식이 올바르지 않습니다", exception);
+            }
+            candidateSource = uri.getPath() == null ? "" : uri.getPath();
+        }
+
+        Matcher matcher = NOTION_ID_PATTERN.matcher(candidateSource);
+        String candidate = null;
+        while (matcher.find()) {
+            candidate = matcher.group(1);
+        }
+        if (candidate == null) {
+            throw new IllegalArgumentException("notionDatabaseId 형식이 올바르지 않습니다");
+        }
+
+        String compact = candidate.replace("-", "").toLowerCase();
+        return compact.substring(0, 8)
+            + "-" + compact.substring(8, 12)
+            + "-" + compact.substring(12, 16)
+            + "-" + compact.substring(16, 20)
+            + "-" + compact.substring(20);
     }
 
     private static boolean hasText(String value) {

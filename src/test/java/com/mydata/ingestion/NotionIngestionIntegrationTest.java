@@ -138,6 +138,16 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Override
+        public NotionApiClient.NotionDatabase retrieveDatabase(String databaseId) {
+            throw new UnsupportedOperationException("database mode is not used in this test");
+        }
+
+        @Override
+        public List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId) {
+            throw new UnsupportedOperationException("database mode is not used in this test");
+        }
+
+        @Override
         public List<NotionApiClient.NotionBlock> listBlockChildren(String blockId) {
             return blockChildren.getOrDefault(blockId, List.of());
         }
