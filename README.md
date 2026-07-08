@@ -176,6 +176,13 @@ DATABASE_PASSWORD=my_data \
 ./gradlew bootRun
 ```
 
+## Synology NAS 배포
+
+NAS 배포는 로컬 개발용 `docker-compose.yml`과 분리된 Docker 이미지 + `deploy/compose.yml` 구조를 사용합니다.
+KIS 프로젝트처럼 GHCR, Tailscale, SSH, Synology Docker Compose 흐름으로 배포하며, 기존 NAS PostgreSQL/pgvector에는 Spring JDBC URL로 접속합니다.
+
+자세한 설정은 [Synology NAS 배포 가이드](docs/nas-deployment.md)를 확인하세요.
+
 ## DB 형상관리
 
 DB 스키마는 Liquibase로 관리합니다.
