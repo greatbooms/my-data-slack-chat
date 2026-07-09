@@ -22,6 +22,8 @@
 
 NAS 배포 Compose는 앱 컨테이너만 실행합니다. 개발용 `docker-compose.yml`은 로컬 PostgreSQL까지 포함하므로 NAS 배포에는 사용하지 않습니다.
 
+`deploy/compose.yml`의 Compose service key는 `app`이고, Docker 컨테이너 이름은 `container_name: my-data-slack-chat`으로 고정합니다. Synology Container Manager가 project/service/container 이름이 모두 같을 때 `com.docker.compose.replace` label 값을 컨테이너 표시명 앞에 붙이는 경우가 있어, service 이름과 실제 컨테이너 이름을 분리합니다.
+
 `deploy/compose.yml`은 KIS 프로젝트처럼 `network_mode: host`를 사용합니다. 따라서 앱 컨테이너에서 `127.0.0.1:<port>`는 NAS 호스트의 포트를 바라봅니다. NAS의 DB 컨테이너가 호스트 포트 `15432`로 열려 있다면 다음처럼 연결합니다.
 
 ```env

@@ -1,5 +1,5 @@
 services:
-  my-data-slack-chat:
+  app:
     image: ${IMAGE:-ghcr.io/greatbooms/my-data-slack-chat:latest}
     container_name: my-data-slack-chat
     network_mode: host
