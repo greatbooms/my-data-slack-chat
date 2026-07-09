@@ -22,6 +22,15 @@ spring:
 server:
   port: ${SERVER_PORT:50506}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 my-data:
   admin:
     bootstrap:
