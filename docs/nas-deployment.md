@@ -107,19 +107,16 @@ Repository Settings의 `Secrets and variables` → `Actions`에 다음 값을 �
 - `TS_OAUTH_CLIENT_ID`
 - `TS_OAUTH_SECRET`
 - `SYNOLOGY_HOST`
+- `SYNOLOGY_PORT`
 - `SYNOLOGY_USER`
 - `SYNOLOGY_SSH_KEY`
 - `SYNOLOGY_DEPLOY_PATH`
-
-선택:
-
-- `SYNOLOGY_PORT`
 
 설명:
 
 - `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`: Tailscale OAuth Client 값입니다. `auth_keys` writable scope가 필요합니다.
 - `SYNOLOGY_HOST`: NAS의 Tailscale hostname 또는 100.x IP입니다.
-- `SYNOLOGY_PORT`: SSH 포트입니다. 생략하면 `2008`을 사용합니다.
+- `SYNOLOGY_PORT`: NAS SSH 포트입니다. 환경마다 다르므로 GitHub Secret에 명시적으로 설정합니다.
 - `SYNOLOGY_USER`: SSH 로그인 사용자입니다.
 - `SYNOLOGY_SSH_KEY`: GitHub Actions가 사용할 SSH private key입니다.
 - `SYNOLOGY_DEPLOY_PATH`: NAS 배포 경로입니다. 예: `/volume1/docker/my-data-slack-chat`
