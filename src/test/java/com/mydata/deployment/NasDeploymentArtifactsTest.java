@@ -120,6 +120,31 @@ class NasDeploymentArtifactsTest {
     }
 
     @Test
+    void databaseSyncScriptIsDocumentedAndProdEnvIsIgnored() throws Exception {
+        String gitignore = readRequired(".gitignore");
+        String script = readRequired("scripts/dev/sync-db-from-prod-env.sh");
+        String readme = readRequired("README.md");
+
+        assertThat(gitignore)
+            .contains(".env")
+            .contains(".env.prod");
+        assertThat(script)
+            .contains("SOURCE_ENV_FILE=\"${SOURCE_ENV_FILE:-.env.prod}\"")
+            .contains("TARGET_ENV_FILE=\"${TARGET_ENV_FILE:-.env}\"")
+            .contains("Refusing to overwrite target DB schema without --yes")
+            .contains("Target DB host is not local")
+            .contains("DROP SCHEMA IF EXISTS")
+            .contains("pg_dump")
+            .contains("pg_restore");
+        assertThat(readme)
+            .contains("운영 DB를 로컬 DB로 덮어쓰기")
+            .contains("scripts/dev/sync-db-from-prod-env.sh --dry-run")
+            .contains("scripts/dev/sync-db-from-prod-env.sh --yes")
+            .contains(".env.prod의 `DATABASE_URL`은 스크립트를 실행하는 머신에서 접속 가능한 주소여야 합니다")
+            .contains("target DB host가 로컬이 아니면 기본적으로 실패합니다");
+    }
+
+    @Test
     void nasDeploymentGuideDocumentsUserOwnedSetupSteps() throws Exception {
         String guide = readRequired("docs/nas-deployment.md");
 

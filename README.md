@@ -211,6 +211,36 @@ docker exec -i my-data-postgres psql -U my_data -d my_data < scripts/dev/seed-lo
 
 `scripts/dev/seed-local.sql`은 Slack 외부 계정 매핑과 `notion-test` 데이터소스를 로컬 DB에 넣습니다.
 
+### 운영 DB를 로컬 DB로 덮어쓰기
+
+NAS 운영 DB 상태를 로컬 개발 DB에 복제하려면 루트 `.env.prod`의 DB를 source로, 루트 `.env`의 DB를 target으로 사용합니다.
+이 스크립트는 target DB의 `currentSchema` 또는 `schema` 값을 기준으로 해당 스키마를 drop/recreate 한 뒤 `pg_dump`와 `pg_restore`로 복원합니다.
+
+사전 조건:
+
+- 로컬 머신에 `pg_dump`, `psql`, `pg_restore`가 있어야 합니다.
+- `.env`에는 로컬 target DB 접속 정보가 있어야 합니다.
+- `.env.prod`에는 운영 source DB 접속 정보가 있어야 합니다.
+- .env.prod의 `DATABASE_URL`은 스크립트를 실행하는 머신에서 접속 가능한 주소여야 합니다. NAS 내부 기준의 `127.0.0.1` 주소라면 로컬에서 그대로는 접속되지 않습니다.
+
+먼저 dry-run으로 source와 target이 맞는지 확인합니다. 비밀번호는 출력하지 않습니다.
+
+```bash
+scripts/dev/sync-db-from-prod-env.sh --dry-run
+```
+
+확인 후 실제로 로컬 DB를 덮어씁니다.
+
+```bash
+scripts/dev/sync-db-from-prod-env.sh --yes
+```
+
+안전장치:
+
+- `--yes` 없이는 덮어쓰기를 실행하지 않습니다.
+- source와 target이 같은 DB/schema로 해석되면 실패합니다.
+- target DB host가 로컬이 아니면 기본적으로 실패합니다. 의도적으로 원격 target에 복원해야 할 때만 `--allow-non-local-target`을 추가합니다.
+
 ## 현재 구현 범위
 
 - PostgreSQL + pgvector 스키마
