@@ -16,6 +16,8 @@ import com.mydata.workspaces.WorkspaceEntity;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -165,8 +167,13 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             .andExpect(jsonPath("$.data.dataSources.items[*].name").value(not(hasItem("Workspace notes"))));
     }
 
-    @Test
-    void createsNotionDataSourceWithRootPageConfig() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "https://www.notion.so/greatbooms/Project-Wiki-248104cd477e80fdb757e945d38000bd?pvs=4",
+        "248104cd477e80fdb757e945d38000bd",
+        "248104cd-477e-80fd-b757-e945d38000bd"
+    })
+    void createsNotionDataSourceWithRootPageLinkOrIdConfig(String notionRootPageInput) throws Exception {
         String suffix = UUID.randomUUID().toString();
         UserEntity owner = users.save(UserEntity.create("notion-owner-" + suffix + "@example.com", "Owner"));
         WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
@@ -181,23 +188,100 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
                 name: "Notion wiki",
                 visibility: WORKSPACE,
                 syncMode: MANUAL,
-                notionRootPageId: "root-page-id"
+                notionRootPageId: "%s"
               }) {
                 id
                 type
                 notionRootPageId
               }
             }
-            """.formatted(workspace.getId(), owner.getId()))
+            """.formatted(workspace.getId(), owner.getId(), notionRootPageInput))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.createDataSource.type").value("NOTION"))
-            .andExpect(jsonPath("$.data.createDataSource.notionRootPageId").value("root-page-id"))
+            .andExpect(jsonPath("$.data.createDataSource.notionRootPageId")
+                .value("248104cd-477e-80fd-b757-e945d38000bd"))
             .andReturn();
 
         String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
         assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
-            .configValue("notionRootPageId")).isEqualTo("root-page-id");
+            .configValue("notionRootPageId"))
+            .isEqualTo("248104cd-477e-80fd-b757-e945d38000bd");
         assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void rejectsNotionDataSourceWithInvalidRootPageLink() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-invalid-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-invalid-admin-" + suffix + "@example.com");
+        int initialDataSourceCount = dataSources.findByDeletedAtIsNullOrderByCreatedAtDesc().size();
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Invalid Notion page",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "https://www.notion.so/greatbooms/not-a-page-id"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("notionRootPageId 형식이 올바르지 않습니다"));
+
+        assertThat(dataSources.findByDeletedAtIsNullOrderByCreatedAtDesc())
+            .hasSize(initialDataSourceCount);
+    }
+
+    @Test
+    void updatesNotionRootPageConfigFromLink() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("notion-update-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("notion-update-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Notion wiki",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "248104cd477e80fdb757e945d38000bd"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+
+        graphQl(adminSession, """
+            mutation {
+              updateDataSource(id: "%s", input: {
+                notionRootPageId: "https://www.notion.so/greatbooms/Updated-0123456789abcdef0123456789abcdef?pvs=4"
+              }) {
+                notionRootPageId
+              }
+            }
+            """.formatted(dataSourceId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.updateDataSource.notionRootPageId")
+                .value("01234567-89ab-cdef-0123-456789abcdef"));
+
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("notionRootPageId"))
+            .isEqualTo("01234567-89ab-cdef-0123-456789abcdef");
     }
 
     @Test
