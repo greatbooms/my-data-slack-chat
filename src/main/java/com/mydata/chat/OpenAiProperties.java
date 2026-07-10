@@ -11,7 +11,7 @@ public record OpenAiProperties(
     String model
 ) {
     private static final URI DEFAULT_BASE_URL = URI.create("https://api.openai.com");
-    private static final String DEFAULT_MODEL = "gpt-5.4-mini";
+    private static final String DEFAULT_MODEL = "gpt-5.6-terra";
 
     public OpenAiProperties {
         apiKey = apiKey == null ? "" : apiKey;

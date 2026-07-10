@@ -62,7 +62,7 @@ my-data:
     openai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com}
       api-key: ${OPENAI_API_KEY:}
-      model: ${OPENAI_MODEL:${MY_DATA_LLM_MODEL:gpt-5.4-mini}}
+      model: ${OPENAI_MODEL:${MY_DATA_LLM_MODEL:gpt-5.6-terra}}
     claude:
       base-url: ${CLAUDE_BASE_URL:https://api.anthropic.com}
       api-key: ${CLAUDE_API_KEY:}
