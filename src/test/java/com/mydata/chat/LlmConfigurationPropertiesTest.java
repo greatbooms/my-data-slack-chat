@@ -22,7 +22,7 @@ class LlmConfigurationPropertiesTest {
             .containsEntry("my-data.llm.provider", "${MY_DATA_LLM_PROVIDER:stub}")
             .containsEntry("my-data.llm.openai.api-key", "${OPENAI_API_KEY:}")
             .containsEntry("my-data.llm.openai.base-url", "${OPENAI_BASE_URL:https://api.openai.com}")
-            .containsEntry("my-data.llm.openai.model", "${OPENAI_MODEL:${MY_DATA_LLM_MODEL:gpt-5.4-mini}}");
+            .containsEntry("my-data.llm.openai.model", "${OPENAI_MODEL:${MY_DATA_LLM_MODEL:gpt-5.6-terra}}");
         assertThat(properties)
             .doesNotContainKey("my-data.llm.model")
             .doesNotContainKey("my-data.llm.api-key")
@@ -50,7 +50,7 @@ class LlmConfigurationPropertiesTest {
 
         assertThat(properties.apiKey()).isEmpty();
         assertThat(properties.baseUrl()).isEqualTo(URI.create("https://api.openai.com"));
-        assertThat(properties.model()).isEqualTo("gpt-5.4-mini");
+        assertThat(properties.model()).isEqualTo("gpt-5.6-terra");
     }
 
     @Test
