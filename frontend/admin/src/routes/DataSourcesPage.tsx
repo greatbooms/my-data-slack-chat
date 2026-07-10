@@ -107,16 +107,19 @@ function DataSourcesPage() {
   });
 
   function openCreateForm() {
+    saveDataSourceMutation.reset();
     setEditingDataSource(null);
     setIsFormOpen(true);
   }
 
   function openEditForm(dataSource: DataSourceFieldsFragment) {
+    saveDataSourceMutation.reset();
     setEditingDataSource(dataSource);
     setIsFormOpen(true);
   }
 
   function closeForm() {
+    saveDataSourceMutation.reset();
     setEditingDataSource(null);
     setIsFormOpen(false);
   }
@@ -268,6 +271,7 @@ function DataSourcesPage() {
       {isFormOpen ? (
         <DataSourceFormDialog
           dataSource={editingDataSource}
+          errorMessage={dataSourceMutationErrorMessage(saveDataSourceMutation.error)}
           isSubmitting={saveDataSourceMutation.isPending}
           users={users}
           workspaces={workspaces}
@@ -277,6 +281,17 @@ function DataSourcesPage() {
       ) : null}
     </section>
   );
+}
+
+function dataSourceMutationErrorMessage(error: unknown): string | null {
+  if (error === null || error === undefined) {
+    return null;
+  }
+  if (error instanceof Error
+    && error.message.includes('notionRootPageId 형식이 올바르지 않습니다')) {
+    return 'notionRootPageId 형식이 올바르지 않습니다';
+  }
+  return '데이터소스를 저장하지 못했습니다.';
 }
 
 function formatDate(value: string) {

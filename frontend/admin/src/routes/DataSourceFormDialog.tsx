@@ -29,6 +29,7 @@ export type DataSourceFormValues = {
 
 type DataSourceFormDialogProps = {
   dataSource: DataSourceFieldsFragment | null;
+  errorMessage: string | null;
   isSubmitting: boolean;
   users: UserFieldsFragment[];
   workspaces: WorkspaceFieldsFragment[];
@@ -38,6 +39,7 @@ type DataSourceFormDialogProps = {
 
 function DataSourceFormDialog({
   dataSource,
+  errorMessage,
   isSubmitting,
   users,
   workspaces,
@@ -150,10 +152,11 @@ function DataSourceFormDialog({
               </label>
               {values.notionRootKind === 'PAGE' ? (
                 <label>
-                  Notion 루트 페이지 ID
+                  Notion 루트 페이지 링크 또는 ID
                   <input
                     value={values.notionRootPageId}
                     disabled={Boolean(dataSource && dataSource.type !== 'NOTION')}
+                    placeholder="https://www.notion.so/workspace/Project-Wiki-..."
                     required
                     onChange={(event) => setValues({ ...values, notionRootPageId: event.target.value })}
                   />
@@ -233,6 +236,8 @@ function DataSourceFormDialog({
               <option value="MANUAL_AND_SCHEDULED">MANUAL_AND_SCHEDULED</option>
             </select>
           </label>
+
+          {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
 
           <footer>
             <button type="button" className="secondary-button" onClick={onClose}>

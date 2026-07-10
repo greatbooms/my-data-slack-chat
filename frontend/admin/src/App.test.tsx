@@ -590,7 +590,8 @@ describe('관리자 앱 인증 흐름', () => {
     expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query).toContain('AdminIngestionJobs');
   });
 
-  it('Notion 데이터소스를 만들 때 루트 페이지 ID를 함께 보낸다', async () => {
+  it('Notion 페이지 데이터소스를 만들 때 페이지 링크를 함께 보낸다', async () => {
+    const pageLink = 'https://www.notion.so/greatbooms/Project-Wiki-248104cd477e80fdb757e945d38000bd?pvs=4';
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
         headerName: 'X-CSRF-TOKEN',
@@ -621,13 +622,13 @@ describe('관리자 앱 인증 흐름', () => {
       .mockResolvedValueOnce(graphqlResponse('createDataSource', dataSourceFixture({
         id: 'notion-source-id',
         name: 'Notion wiki',
-        notionRootPageId: 'root-page-id'
+        notionRootPageId: '248104cd-477e-80fd-b757-e945d38000bd'
       })))
       .mockResolvedValueOnce(adminDataSourcesResponse([
         dataSourceFixture({
           id: 'notion-source-id',
           name: 'Notion wiki',
-          notionRootPageId: 'root-page-id'
+          notionRootPageId: '248104cd-477e-80fd-b757-e945d38000bd'
         })
       ]));
     vi.stubGlobal('fetch', fetchMock);
@@ -654,8 +655,13 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'NOTION' }
     });
-    fireEvent.change(screen.getByLabelText('Notion 루트 페이지 ID'), {
-      target: { value: 'root-page-id' }
+    const pageInput = screen.getByLabelText('Notion 루트 페이지 링크 또는 ID');
+    expect(pageInput).toHaveAttribute(
+      'placeholder',
+      'https://www.notion.so/workspace/Project-Wiki-...'
+    );
+    fireEvent.change(pageInput, {
+      target: { value: pageLink }
     });
     fireEvent.click(screen.getByRole('button', { name: '저장' }));
 
@@ -667,12 +673,71 @@ describe('관리자 앱 인증 흐름', () => {
     const createBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string);
     expect(createBody.variables.input).toMatchObject({
       name: 'Notion wiki',
-      notionRootPageId: 'root-page-id',
+      notionRootPageId: pageLink,
       ownerUserId: 'user-id',
       type: 'NOTION',
       workspaceId: 'workspace-id'
     });
     expect(createBody.variables.input.notionDatabaseId).toBeUndefined();
+  });
+
+  it('잘못된 Notion 페이지 링크 저장 오류를 폼에 표시한다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([]))
+      .mockResolvedValueOnce(adminDataSourceFormOptionsResponse({
+        users: [{
+          id: 'user-id',
+          email: 'owner@example.com',
+          displayName: '데이터 오너',
+          role: 'USER',
+          status: 'ACTIVE',
+          deletedAt: null
+        }],
+        workspaces: [{
+          id: 'workspace-id',
+          ownerUserId: 'user-id',
+          name: 'Personal',
+          deletedAt: null
+        }]
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { createDataSource: null },
+        errors: [{ message: 'notionRootPageId 형식이 올바르지 않습니다' }]
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('데이터소스가 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '데이터소스 추가' }));
+    expect(await screen.findByRole('option', { name: 'Personal' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Invalid Notion page' }
+    });
+    fireEvent.change(screen.getByLabelText('워크스페이스'), {
+      target: { value: 'workspace-id' }
+    });
+    fireEvent.change(screen.getByLabelText('소유 유저'), {
+      target: { value: 'user-id' }
+    });
+    fireEvent.change(screen.getByLabelText('종류'), {
+      target: { value: 'NOTION' }
+    });
+    fireEvent.change(screen.getByLabelText('Notion 루트 페이지 링크 또는 ID'), {
+      target: { value: 'https://www.notion.so/greatbooms/not-a-page-id' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'notionRootPageId 형식이 올바르지 않습니다'
+    );
+    expect(screen.getByRole('dialog', { name: '데이터소스 추가' })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('Notion 데이터베이스 데이터소스를 만들 때 데이터베이스 링크를 함께 보낸다', async () => {
@@ -738,7 +803,7 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('Notion 수집 대상'), {
       target: { value: 'DATABASE' }
     });
-    expect(screen.queryByLabelText('Notion 루트 페이지 ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Notion 루트 페이지 링크 또는 ID')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Notion 데이터베이스 링크 또는 ID'), {
       target: { value: databaseLink }
     });
@@ -821,7 +886,7 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'SLACK' }
     });
-    expect(screen.queryByLabelText('Notion 루트 페이지 ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Notion 루트 페이지 링크 또는 ID')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Slack 채널 ID'), {
       target: { value: 'C1234567890' }
     });
