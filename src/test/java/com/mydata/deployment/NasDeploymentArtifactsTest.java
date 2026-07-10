@@ -42,7 +42,7 @@ class NasDeploymentArtifactsTest {
         String compose = readRequired("deploy/compose.yml");
 
         assertThat(compose)
-            .contains("my-data-slack-chat:")
+            .contains("app:")
             .contains("image: ${IMAGE:-ghcr.io/greatbooms/my-data-slack-chat:latest}")
             .contains("container_name: my-data-slack-chat")
             .contains("network_mode: host")
@@ -52,7 +52,8 @@ class NasDeploymentArtifactsTest {
             .contains("SERVER_PORT: \"50506\"")
             .contains("/actuator/health")
             .contains("max-size: \"100m\"")
-            .contains("max-file: \"5\"");
+            .contains("max-file: \"5\"")
+            .doesNotContain("  my-data-slack-chat:");
     }
 
     @Test
