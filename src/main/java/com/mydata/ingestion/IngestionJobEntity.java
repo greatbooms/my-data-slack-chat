@@ -72,6 +72,12 @@ public class IngestionJobEntity extends BaseEntity {
         errorMessage = null;
     }
 
+    public void markPartialFailed(long totalItemCount, long failedItemCount) {
+        status = IngestionJobStatus.PARTIAL_FAILED;
+        finishedAt = OffsetDateTime.now();
+        errorMessage = "전체 " + totalItemCount + "개 중 " + failedItemCount + "개 실패";
+    }
+
     public void markFailed(String errorMessage) {
         status = IngestionJobStatus.FAILED;
         finishedAt = OffsetDateTime.now();

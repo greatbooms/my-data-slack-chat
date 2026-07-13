@@ -1,6 +1,12 @@
 package com.mydata.connectors.notion;
 
 import com.mydata.auth.PrincipalKeys;
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorFailureEvent;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
 import com.mydata.datasources.DataSourceEntity;
@@ -39,15 +45,29 @@ class NotionPageConnectorTest {
             block("block-3", "paragraph", "Child body", false)
         );
         NotionPageConnector connector = new NotionPageConnector(notion);
-        List<RawExternalDocument> documents = new ArrayList<>();
+        List<ConnectorDocumentEvent> events = new ArrayList<>();
 
-        SyncCursor returnedCursor = connector.fetchChanges(dataSource, new SyncCursor(Map.of()), documents::add);
+        SyncCursor returnedCursor = connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            recordingSink(events)
+        );
+        List<RawExternalDocument> documents = events.stream().map(ConnectorDocumentEvent::document).toList();
 
         assertThat(returnedCursor.value()).isEmpty();
         assertThat(connector.supports()).isEqualTo(DataSourceType.NOTION);
         assertThat(documents)
             .extracting(RawExternalDocument::externalId)
             .containsExactly("root-page", "child-page");
+        assertThat(events)
+            .extracting(ConnectorDocumentEvent::reference)
+            .extracting(ConnectorItemReference::type)
+            .containsOnly(ConnectorItemType.PAGE);
+        assertThat(events)
+            .extracting(event -> event.reference().qualifiedExternalId())
+            .containsExactly("page:root-page", "page:child-page");
+        assertThat(events)
+            .extracting(event -> event.reference().path())
+            .containsExactly(List.of("Root Plan"), List.of("Root Plan", "Child Spec"));
 
         RawExternalDocument root = documents.get(0);
         assertThat(root.sourceType()).isEqualTo(DataSourceType.NOTION);
@@ -114,7 +134,10 @@ class NotionPageConnectorTest {
         NotionPageConnector connector = new NotionPageConnector(notion);
         List<RawExternalDocument> documents = new ArrayList<>();
 
-        connector.fetchChanges(dataSource, new SyncCursor(Map.of()), documents::add);
+        connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            documentSink(documents)
+        );
 
         assertThat(documents).singleElement()
             .satisfies(document -> assertThat(document.aclEntries()).singleElement()
@@ -145,13 +168,27 @@ class NotionPageConnectorTest {
         );
         notion.blocks("row-2");
         NotionPageConnector connector = new NotionPageConnector(notion);
-        List<RawExternalDocument> documents = new ArrayList<>();
+        List<ConnectorDocumentEvent> events = new ArrayList<>();
 
-        connector.fetchChanges(dataSource, new SyncCursor(Map.of()), documents::add);
+        connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            recordingSink(events)
+        );
+        List<RawExternalDocument> documents = events.stream().map(ConnectorDocumentEvent::document).toList();
 
         assertThat(documents)
             .extracting(RawExternalDocument::externalId)
             .containsExactly("row-1", "row-child", "row-2");
+        assertThat(events)
+            .extracting(event -> event.reference().qualifiedExternalId())
+            .containsExactly("page:row-1", "page:row-child", "page:row-2");
+        assertThat(events)
+            .extracting(event -> event.reference().path())
+            .containsExactly(
+                List.of("Roadmap", "First task"),
+                List.of("Roadmap", "First task", "Nested detail"),
+                List.of("Roadmap", "Second task")
+            );
 
         RawExternalDocument first = documents.get(0);
         assertThat(first.title()).isEqualTo("First task");
@@ -217,8 +254,10 @@ class NotionPageConnectorTest {
             new NotionApiClient.NotionDataSource("data-source-2", "Archive"));
         NotionPageConnector connector = new NotionPageConnector(notion);
 
-        assertThatThrownBy(() -> connector.fetchChanges(dataSource, new SyncCursor(Map.of()), document -> {
-        }))
+        assertThatThrownBy(() -> connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            documentSink(new ArrayList<>())
+        ))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("data source가 1개");
     }
@@ -228,8 +267,10 @@ class NotionPageConnectorTest {
         NotionPageConnector connector = new NotionPageConnector(new FakeNotionClient());
         DataSourceEntity dataSource = dataSource(UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE);
 
-        assertThatThrownBy(() -> connector.fetchChanges(dataSource, new SyncCursor(Map.of()), document -> {
-        }))
+        assertThatThrownBy(() -> connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            documentSink(new ArrayList<>())
+        ))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY);
     }
@@ -245,6 +286,46 @@ class NotionPageConnectorTest {
         dataSource.assignOwner(ownerId);
         dataSource.changeVisibility(visibility);
         return dataSource;
+    }
+
+    private static DataSourceSnapshot snapshot(DataSourceEntity dataSource, SyncCursor cursor) {
+        return new DataSourceSnapshot(
+            dataSource.getId(),
+            dataSource.getWorkspaceId(),
+            dataSource.getOwnerUserId(),
+            dataSource.getType(),
+            dataSource.getVisibility(),
+            dataSource.configValues(),
+            cursor
+        );
+    }
+
+    private static ConnectorEventSink documentSink(List<RawExternalDocument> documents) {
+        return new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+                documents.add(event.document());
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new AssertionError("예상하지 않은 connector 실패 event: " + event);
+            }
+        };
+    }
+
+    private static ConnectorEventSink recordingSink(List<ConnectorDocumentEvent> events) {
+        return new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+                events.add(event);
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new AssertionError("예상하지 않은 connector 실패 event: " + event);
+            }
+        };
     }
 
     private static NotionApiClient.NotionBlock block(

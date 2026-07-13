@@ -1,6 +1,12 @@
 package com.mydata.connectors.slack;
 
 import com.mydata.auth.PrincipalKeys;
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorFailureEvent;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
 import com.mydata.datasources.DataSourceEntity;
@@ -53,9 +59,13 @@ class SlackChannelConnectorTest {
         slack.channelMessages = List.of(root);
         slack.threadReplies = List.of(root, reply);
         SlackChannelConnector connector = new SlackChannelConnector(slack);
-        List<RawExternalDocument> documents = new ArrayList<>();
+        List<ConnectorDocumentEvent> events = new ArrayList<>();
 
-        SyncCursor returnedCursor = connector.fetchChanges(dataSource, new SyncCursor(Map.of()), documents::add);
+        SyncCursor returnedCursor = connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            recordingSink(events)
+        );
+        List<RawExternalDocument> documents = events.stream().map(ConnectorDocumentEvent::document).toList();
 
         assertThat(returnedCursor.value()).containsEntry("latestMessageTs", "1710000000.000100");
         assertThat(connector.supports()).isEqualTo(DataSourceType.SLACK);
@@ -65,6 +75,16 @@ class SlackChannelConnectorTest {
         assertThat(documents)
             .extracting(RawExternalDocument::externalId)
             .containsExactly("C123:1710000000.000100", "C123:1710000001.000200");
+        assertThat(events)
+            .extracting(ConnectorDocumentEvent::reference)
+            .extracting(ConnectorItemReference::type)
+            .containsOnly(ConnectorItemType.DATA_SOURCE);
+        assertThat(events)
+            .extracting(event -> event.reference().qualifiedExternalId())
+            .containsExactly(
+                "data-source:C123:1710000000.000100",
+                "data-source:C123:1710000001.000200"
+            );
 
         RawExternalDocument rootDocument = documents.get(0);
         assertThat(rootDocument.sourceType()).isEqualTo(DataSourceType.SLACK);
@@ -135,13 +155,13 @@ class SlackChannelConnectorTest {
         slack.channelMessages = List.of(root);
         slack.threadReplies = List.of(root, reply);
         SlackChannelConnector connector = new SlackChannelConnector(slack);
-        List<RawExternalDocument> documents = new ArrayList<>();
+        List<ConnectorDocumentEvent> events = new ArrayList<>();
 
         SyncCursor returnedCursor = connector.fetchChanges(
-            dataSource,
-            new SyncCursor(Map.of("latestMessageTs", "1710000000.000100")),
-            documents::add
+            snapshot(dataSource, new SyncCursor(Map.of("latestMessageTs", "1710000000.000100"))),
+            recordingSink(events)
         );
+        List<RawExternalDocument> documents = events.stream().map(ConnectorDocumentEvent::document).toList();
 
         assertThat(slack.requestedOldestMessageTs).containsExactly("1710000000.000100");
         assertThat(documents)
@@ -170,7 +190,10 @@ class SlackChannelConnectorTest {
         SlackChannelConnector connector = new SlackChannelConnector(slack);
         List<RawExternalDocument> documents = new ArrayList<>();
 
-        connector.fetchChanges(dataSource, new SyncCursor(Map.of()), documents::add);
+        connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            documentSink(documents)
+        );
 
         assertThat(documents).singleElement()
             .satisfies(document -> assertThat(document.aclEntries()).singleElement()
@@ -182,8 +205,10 @@ class SlackChannelConnectorTest {
         SlackChannelConnector connector = new SlackChannelConnector(new FakeSlackClient());
         DataSourceEntity dataSource = dataSource(UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE);
 
-        assertThatThrownBy(() -> connector.fetchChanges(dataSource, new SyncCursor(Map.of()), document -> {
-        }))
+        assertThatThrownBy(() -> connector.fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())),
+            documentSink(new ArrayList<>())
+        ))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining(SlackChannelConnector.CHANNEL_ID_CONFIG_KEY);
     }
@@ -199,6 +224,46 @@ class SlackChannelConnectorTest {
         dataSource.assignOwner(ownerId);
         dataSource.changeVisibility(visibility);
         return dataSource;
+    }
+
+    private static DataSourceSnapshot snapshot(DataSourceEntity dataSource, SyncCursor cursor) {
+        return new DataSourceSnapshot(
+            dataSource.getId(),
+            dataSource.getWorkspaceId(),
+            dataSource.getOwnerUserId(),
+            dataSource.getType(),
+            dataSource.getVisibility(),
+            dataSource.configValues(),
+            cursor
+        );
+    }
+
+    private static ConnectorEventSink documentSink(List<RawExternalDocument> documents) {
+        return new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+                documents.add(event.document());
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new AssertionError("예상하지 않은 connector 실패 event: " + event);
+            }
+        };
+    }
+
+    private static ConnectorEventSink recordingSink(List<ConnectorDocumentEvent> events) {
+        return new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+                events.add(event);
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new AssertionError("예상하지 않은 connector 실패 event: " + event);
+            }
+        };
     }
 
     private static class FakeSlackClient implements SlackClient {

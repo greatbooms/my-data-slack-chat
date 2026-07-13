@@ -43,6 +43,7 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
+    @Autowired IngestionJobItemRepository jobItems;
     @Autowired IngestionWorker worker;
     @Autowired ExternalDocumentRepository documents;
     @Autowired DocumentAclEntryRepository aclEntries;
@@ -118,6 +119,14 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
             });
         assertThat(ingestionJobs.findById(job.getId()).orElseThrow().getStatus())
             .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(job.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getExternalId()).isEqualTo("data-source:C123:1710000000.000100");
+                assertThat(item.getDocumentId()).isEqualTo(document.getId());
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getReason()).isNull();
+            });
     }
 
     @Test

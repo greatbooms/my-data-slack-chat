@@ -1,7 +1,11 @@
 package com.mydata.ingestion;
 
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceConnector;
-import com.mydata.connectors.core.DocumentHandler;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawContent;
 import com.mydata.connectors.core.RawExternalDocument;
@@ -46,6 +50,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
+    @Autowired IngestionJobItemRepository jobItems;
     @Autowired IngestionCommandService ingestionCommands;
     @Autowired IngestionJobScheduler ingestionJobScheduler;
     @Autowired IngestionWorker worker;
@@ -107,8 +112,58 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 assertThat(chunk.getTokenCount()).isEqualTo(8);
             });
         assertThat(reloadedJob.getStatus()).isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(job.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getExternalId()).isEqualTo("data-source:note-1");
+                assertThat(item.getDocumentId()).isEqualTo(document.getId());
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getReason()).isNull();
+            });
         assertThat(dataSources.findById(dataSource.getId()).orElseThrow().getLastSyncedAt())
             .isNotNull();
+    }
+
+    @Test
+    void unchangedReingestionReturnsExistingDocumentIdForSucceededItem() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity user = users.save(UserEntity.create(
+            "unchanged-local-owner-" + suffix + "@example.com",
+            "Unchanged Local Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Unchanged workspace"));
+        DataSourceEntity dataSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Unchanged local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        dataSource.putConfig("externalId", "unchanged-note");
+        dataSource.putConfig("title", "Unchanged note");
+        dataSource.putConfig("content", "same content");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+
+        IngestionJobEntity firstJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), dataSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+        worker.run(firstJob.getId());
+        UUID documentId = documents.findByDataSourceIdAndExternalId(dataSource.getId(), "unchanged-note")
+            .orElseThrow()
+            .getId();
+        IngestionJobEntity secondJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), dataSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+
+        worker.run(secondJob.getId());
+
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(secondJob.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getDocumentId()).isEqualTo(documentId);
+            });
     }
 
     @Test
@@ -293,7 +348,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             new RawExternalDocument(
                 "metadata-page",
                 DataSourceType.NOTION,
@@ -349,7 +405,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             rawLocalTextDocument(
                 "blank-principal-note",
                 "Blank principal",
@@ -378,7 +435,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             rawLocalTextDocument(
                 "write-permission-note",
                 "Write permission",
@@ -427,8 +485,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 }
 
                 @Override
-                public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
-                    handler.handle(new RawExternalDocument(
+                public SyncCursor fetchChanges(DataSourceSnapshot dataSource, ConnectorEventSink sink) {
+                    RawExternalDocument document = new RawExternalDocument(
                         "bad-note",
                         DataSourceType.NOTION,
                         "Bad note",
@@ -439,9 +497,18 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                         "bad-hash",
                         Map.of(),
                         new RawContent("bad content", "text/plain"),
-                        List.of(new RawAclEntry(PrincipalKeys.user(dataSource.getWorkspaceId()), "WRITE", false, "TEST"))
+                        List.of(new RawAclEntry(PrincipalKeys.user(dataSource.workspaceId()), "WRITE", false, "TEST"))
+                    );
+                    sink.onDocument(new ConnectorDocumentEvent(
+                        document,
+                        new ConnectorItemReference(
+                            ConnectorItemType.PAGE,
+                            "bad-note",
+                            "Bad note",
+                            List.of("Bad note")
+                        )
                     ));
-                    return cursor;
+                    return dataSource.cursor();
                 }
             };
         }

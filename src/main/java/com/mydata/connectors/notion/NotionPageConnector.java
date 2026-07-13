@@ -1,13 +1,15 @@
 package com.mydata.connectors.notion;
 
-import com.mydata.auth.PrincipalKeys;
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceConnector;
-import com.mydata.connectors.core.DocumentHandler;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawContent;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
-import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceType;
 import org.springframework.stereotype.Component;
 
@@ -40,8 +42,8 @@ public class NotionPageConnector implements DataSourceConnector {
     }
 
     @Override
-    public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
-        String principalKey = principalKey(dataSource);
+    public SyncCursor fetchChanges(DataSourceSnapshot dataSource, ConnectorEventSink sink) {
+        String principalKey = dataSource.visibilityPrincipalKey();
         String rootPageId = optionalConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
         String databaseId = optionalConfig(dataSource, DATABASE_ID_CONFIG_KEY);
 
@@ -49,16 +51,16 @@ public class NotionPageConnector implements DataSourceConnector {
             throw new IllegalArgumentException("NOTION 설정은 notionRootPageId 또는 notionDatabaseId 중 하나만 사용할 수 있습니다");
         }
         if (databaseId != null) {
-            fetchDatabase(databaseId, principalKey, handler);
-            return cursor;
+            fetchDatabase(databaseId, principalKey, sink);
+            return dataSource.cursor();
         }
 
         rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
-        fetchPage(rootPageId, rootPageId, null, null, List.of(), 0, principalKey, handler, new HashSet<>());
-        return cursor;
+        fetchPage(rootPageId, rootPageId, null, null, List.of(), 0, principalKey, sink, new HashSet<>());
+        return dataSource.cursor();
     }
 
-    private void fetchDatabase(String databaseId, String principalKey, DocumentHandler handler) {
+    private void fetchDatabase(String databaseId, String principalKey, ConnectorEventSink sink) {
         NotionApiClient.NotionDatabase database = notionClient.retrieveDatabase(databaseId);
         NotionApiClient.NotionDataSource dataSource = singleDataSource(database);
         String databaseTitle = titleOrFallback(database.title(), database.id());
@@ -75,7 +77,7 @@ public class NotionPageConnector implements DataSourceConnector {
                     List.of(databaseTitle),
                     1,
                     principalKey,
-                    handler,
+                    sink,
                     visitedPageIds
                 );
             }
@@ -99,7 +101,7 @@ public class NotionPageConnector implements DataSourceConnector {
         List<String> parentPath,
         int depth,
         String principalKey,
-        DocumentHandler handler,
+        ConnectorEventSink sink,
         Set<String> visitedPageIds
     ) {
         if (!visitedPageIds.add(page.id())) {
@@ -117,7 +119,7 @@ public class NotionPageConnector implements DataSourceConnector {
         metadata.put("notionDataSourceId", dataSource.id());
         putIfPresent(metadata, "notionDataSourceName", dataSource.name());
 
-        handler.handle(new RawExternalDocument(
+        RawExternalDocument document = new RawExternalDocument(
             page.id(),
             DataSourceType.NOTION,
             title,
@@ -129,6 +131,10 @@ public class NotionPageConnector implements DataSourceConnector {
             metadata,
             new RawContent(text, MIME_TYPE),
             List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
+        );
+        sink.onDocument(new ConnectorDocumentEvent(
+            document,
+            new ConnectorItemReference(ConnectorItemType.PAGE, page.id(), title, path)
         ));
 
         for (String childPageId : pageContent.childPageIds()) {
@@ -143,7 +149,7 @@ public class NotionPageConnector implements DataSourceConnector {
                 path,
                 depth + 1,
                 principalKey,
-                handler,
+                sink,
                 visitedPageIds
             );
         }
@@ -157,7 +163,7 @@ public class NotionPageConnector implements DataSourceConnector {
         List<String> parentPath,
         int depth,
         String principalKey,
-        DocumentHandler handler,
+        ConnectorEventSink sink,
         Set<String> visitedPageIds
     ) {
         if (!visitedPageIds.add(pageId)) {
@@ -171,7 +177,7 @@ public class NotionPageConnector implements DataSourceConnector {
         PageContent pageContent = collectPageContent(pageId);
         String text = documentText(title, page.properties(), pageContent.lines());
 
-        handler.handle(new RawExternalDocument(
+        RawExternalDocument document = new RawExternalDocument(
             page.id(),
             DataSourceType.NOTION,
             title,
@@ -183,10 +189,14 @@ public class NotionPageConnector implements DataSourceConnector {
             metadata(page, rootPageId, parentPageId, parentTitle, path, depth),
             new RawContent(text, MIME_TYPE),
             List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
+        );
+        sink.onDocument(new ConnectorDocumentEvent(
+            document,
+            new ConnectorItemReference(ConnectorItemType.PAGE, page.id(), title, path)
         ));
 
         for (String childPageId : pageContent.childPageIds()) {
-            fetchPage(childPageId, rootPageId, page.id(), title, path, depth + 1, principalKey, handler, visitedPageIds);
+            fetchPage(childPageId, rootPageId, page.id(), title, path, depth + 1, principalKey, sink, visitedPageIds);
         }
     }
 
@@ -288,14 +298,7 @@ public class NotionPageConnector implements DataSourceConnector {
         return fallback;
     }
 
-    private String principalKey(DataSourceEntity dataSource) {
-        return switch (dataSource.getVisibility()) {
-            case PRIVATE -> PrincipalKeys.user(dataSource.getOwnerUserId());
-            case WORKSPACE -> PrincipalKeys.workspace(dataSource.getWorkspaceId());
-        };
-    }
-
-    private String requiredConfig(DataSourceEntity dataSource, String key) {
+    private String requiredConfig(DataSourceSnapshot dataSource, String key) {
         String value = optionalConfig(dataSource, key);
         if (value == null) {
             throw new IllegalArgumentException("NOTION 설정값이 없습니다: " + key);
@@ -303,7 +306,7 @@ public class NotionPageConnector implements DataSourceConnector {
         return value;
     }
 
-    private String optionalConfig(DataSourceEntity dataSource, String key) {
+    private String optionalConfig(DataSourceSnapshot dataSource, String key) {
         String value = dataSource.configValue(key);
         if (value == null || value.isBlank()) {
             return null;
