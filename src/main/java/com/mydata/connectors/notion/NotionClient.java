@@ -1,13 +1,20 @@
 package com.mydata.connectors.notion;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 public interface NotionClient {
     NotionApiClient.NotionPage retrievePage(String pageId);
 
     NotionApiClient.NotionDatabase retrieveDatabase(String databaseId);
 
-    List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId);
+    void queryDataSourcePages(
+        String dataSourceId,
+        Consumer<List<NotionApiClient.NotionPage>> batchConsumer
+    );
 
-    List<NotionApiClient.NotionBlock> listBlockChildren(String blockId);
+    void listBlockChildren(
+        String blockId,
+        Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
+    );
 }

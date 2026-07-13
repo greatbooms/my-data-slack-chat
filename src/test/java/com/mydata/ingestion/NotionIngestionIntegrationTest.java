@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,8 +66,8 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         dataSource = dataSources.saveAndFlush(dataSource);
         notion.page("root-page", "Root Plan", "https://notion.so/root-page");
         notion.blocks("root-page",
-            new NotionApiClient.NotionBlock("block-1", "heading_1", "Intro", false),
-            new NotionApiClient.NotionBlock("block-2", "paragraph", "alpha beta gamma", false)
+            new NotionApiClient.NotionBlock("block-1", "heading_1", "Intro", false, null),
+            new NotionApiClient.NotionBlock("block-2", "paragraph", "alpha beta gamma", false, null)
         );
         IngestionJobEntity job = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
             workspace.getId(),
@@ -143,13 +144,19 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Override
-        public List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId) {
+        public void queryDataSourcePages(
+            String dataSourceId,
+            Consumer<List<NotionApiClient.NotionPage>> batchConsumer
+        ) {
             throw new UnsupportedOperationException("database mode is not used in this test");
         }
 
         @Override
-        public List<NotionApiClient.NotionBlock> listBlockChildren(String blockId) {
-            return blockChildren.getOrDefault(blockId, List.of());
+        public void listBlockChildren(
+            String blockId,
+            Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
+        ) {
+            batchConsumer.accept(blockChildren.getOrDefault(blockId, List.of()));
         }
     }
 }

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -252,7 +253,7 @@ class NotionPageConnectorTest {
         String plainText,
         boolean hasChildren
     ) {
-        return new NotionApiClient.NotionBlock(id, type, plainText, hasChildren);
+        return new NotionApiClient.NotionBlock(id, type, plainText, hasChildren, null);
     }
 
     private static Map<String, String> properties(String... keyValues) {
@@ -314,15 +315,21 @@ class NotionPageConnectorTest {
         }
 
         @Override
-        public List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId) {
-            return dataSourcePages.getOrDefault(dataSourceId, List.of()).stream()
+        public void queryDataSourcePages(
+            String dataSourceId,
+            Consumer<List<NotionApiClient.NotionPage>> batchConsumer
+        ) {
+            batchConsumer.accept(dataSourcePages.getOrDefault(dataSourceId, List.of()).stream()
                 .map(pages::get)
-                .toList();
+                .toList());
         }
 
         @Override
-        public List<NotionApiClient.NotionBlock> listBlockChildren(String blockId) {
-            return blockChildren.getOrDefault(blockId, List.of());
+        public void listBlockChildren(
+            String blockId,
+            Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
+        ) {
+            batchConsumer.accept(blockChildren.getOrDefault(blockId, List.of()));
         }
     }
 }

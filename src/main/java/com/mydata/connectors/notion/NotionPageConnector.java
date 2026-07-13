@@ -63,21 +63,23 @@ public class NotionPageConnector implements DataSourceConnector {
         NotionApiClient.NotionDataSource dataSource = singleDataSource(database);
         String databaseTitle = titleOrFallback(database.title(), database.id());
         Set<String> visitedPageIds = new HashSet<>();
-        for (NotionApiClient.NotionPage page : notionClient.queryDataSourcePages(dataSource.id())) {
-            fetchDatabasePage(
-                database,
-                databaseTitle,
-                dataSource,
-                page,
-                null,
-                databaseTitle,
-                List.of(databaseTitle),
-                1,
-                principalKey,
-                handler,
-                visitedPageIds
-            );
-        }
+        notionClient.queryDataSourcePages(dataSource.id(), pages -> {
+            for (NotionApiClient.NotionPage page : pages) {
+                fetchDatabasePage(
+                    database,
+                    databaseTitle,
+                    dataSource,
+                    page,
+                    null,
+                    databaseTitle,
+                    List.of(databaseTitle),
+                    1,
+                    principalKey,
+                    handler,
+                    visitedPageIds
+                );
+            }
+        });
     }
 
     private NotionApiClient.NotionDataSource singleDataSource(NotionApiClient.NotionDatabase database) {
@@ -228,8 +230,19 @@ public class NotionPageConnector implements DataSourceConnector {
     private PageContent collectPageContent(String pageId) {
         List<String> lines = new ArrayList<>();
         List<String> childPageIds = new ArrayList<>();
-        collectBlocks(notionClient.listBlockChildren(pageId), lines, childPageIds, new HashSet<>());
+        collectBlockChildren(pageId, lines, childPageIds, new HashSet<>());
         return new PageContent(lines, childPageIds);
+    }
+
+    private void collectBlockChildren(
+        String blockId,
+        List<String> lines,
+        List<String> childPageIds,
+        Set<String> visitedBlockIds
+    ) {
+        notionClient.listBlockChildren(blockId, blocks ->
+            collectBlocks(blocks, lines, childPageIds, visitedBlockIds)
+        );
     }
 
     private void collectBlocks(
@@ -251,7 +264,7 @@ public class NotionPageConnector implements DataSourceConnector {
                 continue;
             }
             if (block.hasChildren()) {
-                collectBlocks(notionClient.listBlockChildren(block.id()), lines, childPageIds, visitedBlockIds);
+                collectBlockChildren(block.id(), lines, childPageIds, visitedBlockIds);
             }
         }
     }
