@@ -13,11 +13,17 @@ public record AdminIngestionJobPayload(
     IngestionTriggerType triggerType,
     IngestionJobStatus status,
     String errorMessage,
+    int succeededItemCount,
+    int failedItemCount,
     String startedAt,
     String finishedAt,
     String createdAt
 ) {
-    public static AdminIngestionJobPayload from(IngestionJobEntity job) {
+    public static AdminIngestionJobPayload from(
+        IngestionJobEntity job,
+        long succeededItemCount,
+        long failedItemCount
+    ) {
         String startedAt = job.getStartedAt() == null ? null : job.getStartedAt().toString();
         String finishedAt = job.getFinishedAt() == null ? null : job.getFinishedAt().toString();
         return new AdminIngestionJobPayload(
@@ -27,9 +33,15 @@ public record AdminIngestionJobPayload(
             job.getTriggerType(),
             job.getStatus(),
             job.getErrorMessage(),
+            Math.toIntExact(succeededItemCount),
+            Math.toIntExact(failedItemCount),
             startedAt,
             finishedAt,
             job.getCreatedAt().toString()
         );
+    }
+
+    public static AdminIngestionJobPayload from(IngestionJobEntity job) {
+        return from(job, 0, 0);
     }
 }

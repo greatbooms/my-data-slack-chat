@@ -135,13 +135,17 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
               }
               ingestionJobs(dataSourceId: "%s") {
                 status
+                succeededItemCount
+                failedItemCount
               }
             }
             """.formatted(dataSourceId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.dataSources.totalCount").value(initialDataSourceCount + 1))
             .andExpect(jsonPath("$.data.dataSources.items[*].name").value(hasItem("Workspace notes")))
-            .andExpect(jsonPath("$.data.ingestionJobs[*].status").value(hasItem("PENDING")));
+            .andExpect(jsonPath("$.data.ingestionJobs[*].status").value(hasItem("PENDING")))
+            .andExpect(jsonPath("$.data.ingestionJobs[0].succeededItemCount").value(0))
+            .andExpect(jsonPath("$.data.ingestionJobs[0].failedItemCount").value(0));
 
         graphQl(adminSession, """
             mutation {

@@ -12,7 +12,6 @@ import com.mydata.datasources.DataSourceVisibility;
 import com.mydata.datasources.SyncMode;
 import com.mydata.ingestion.IngestionCommandService;
 import com.mydata.ingestion.IngestionJobEntity;
-import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.users.UserRepository;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,7 +39,6 @@ public class AdminDataSourceService {
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
     private final IngestionCommandService ingestionCommands;
-    private final IngestionJobRepository ingestionJobs;
     private final JdbcTemplate jdbcTemplate;
 
     public AdminDataSourceService(
@@ -48,14 +46,12 @@ public class AdminDataSourceService {
         WorkspaceRepository workspaces,
         UserRepository users,
         IngestionCommandService ingestionCommands,
-        IngestionJobRepository ingestionJobs,
         JdbcTemplate jdbcTemplate
     ) {
         this.dataSources = dataSources;
         this.workspaces = workspaces;
         this.users = users;
         this.ingestionCommands = ingestionCommands;
-        this.ingestionJobs = ingestionJobs;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -72,17 +68,6 @@ public class AdminDataSourceService {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminDataSourcePayload findDataSource(String id) {
         return AdminDataSourcePayload.from(activeDataSource(id));
-    }
-
-    @Transactional(readOnly = true)
-    @PreAuthorize("hasRole('ADMIN')")
-    public List<AdminIngestionJobPayload> ingestionJobs(String dataSourceId, Integer first) {
-        UUID parsedDataSourceId = parseId(dataSourceId, "dataSourceId");
-        int limit = first == null || first < 1 ? 20 : first;
-        return ingestionJobs.findByDataSourceIdOrderByCreatedAtDesc(parsedDataSourceId).stream()
-            .limit(limit)
-            .map(AdminIngestionJobPayload::from)
-            .toList();
     }
 
     @Transactional
