@@ -86,7 +86,17 @@ https://www.notion.so/workspace/Roadmap-248104cd477e80fdb757e945d38000bd?v=24810
 
 Notion API `2026-03-11`에서는 데이터베이스와 data source가 분리되어 있습니다. 이 프로젝트는 사용자가 database 링크/ID를 입력하면 서버가 Notion API로 연결된 data source ID를 찾아 row page를 수집합니다. 데이터베이스에 data source가 여러 개 있으면 현재 버전에서는 어느 data source를 쓸지 자동 선택하지 않고 수집을 실패시킵니다.
 
-## 6. 이 프로젝트에서 데이터소스 만들기
+## 6. 페이지 아래 데이터베이스 자동 수집
+
+수집 대상을 `페이지`로 등록하면 루트 페이지와 `child_page` 하위 페이지를 재귀적으로 수집하고, 그 범위에서 발견한 `child_database`의 행도 함께 수집합니다. 화면에 보이는 database view의 필터·정렬은 적용하지 않으며, database가 가리키는 단일 data source의 전체 행을 읽습니다.
+
+원본 database를 Notion integration에 직접 공유해야 합니다. linked database에서 원본 ID를 API가 제공하지 않거나 원본이 공유되지 않은 경우 자동 해석하지 않으므로, 원본 database 링크를 `데이터베이스` 대상으로 별도 등록하세요.
+
+## 7. 부분 실패 확인
+
+일부 문서는 저장되고 일부 페이지나 database만 실패하면 job 상태가 `PARTIAL_FAILED`가 됩니다. 관리자 화면의 `수집 기록`에서 성공·실패 개수를 확인하고 `실패 상세 보기`에서 external ID, 경로, 실패 단계와 원인을 확인할 수 있습니다. `더 보기`는 실패 항목을 50개씩 추가로 불러옵니다. 부분 실패와 전체 실패에서는 cursor와 마지막 수집 시각을 갱신하지 않으므로 공유 권한이나 원인을 수정한 뒤 수동 수집을 다시 실행하세요.
+
+## 8. 이 프로젝트에서 데이터소스 만들기
 
 1. `.env`를 로드한 뒤 서버를 실행합니다.
 
@@ -104,7 +114,7 @@ set +a
 6. 데이터베이스를 선택한 경우 `Notion 데이터베이스 링크 또는 ID`에 복사한 데이터베이스 링크나 ID를 입력합니다.
 7. 저장 후 수동 수집을 실행합니다.
 
-## 7. 자주 나는 오류
+## 9. 자주 나는 오류
 
 - `object_not_found`: connection이 해당 페이지에 초대되지 않았거나 페이지 ID가 틀렸을 가능성이 큽니다.
 - 데이터베이스 수집의 `object_not_found`: 원본 데이터베이스에 connection이 초대되지 않았거나 linked database 링크를 넣었을 가능성이 큽니다.
