@@ -4,8 +4,7 @@ import { fetchAdminIngestionJobItems, fetchAdminIngestionJobs } from '../api/adm
 import { useFragment } from '../generated/fragment-masking';
 import {
   IngestionJobFieldsFragmentDoc,
-  IngestionJobItemFieldsFragmentDoc,
-  type IngestionJobFieldsFragment
+  IngestionJobItemFieldsFragmentDoc
 } from '../generated/graphql';
 
 type IngestionJobHistoryPanelProps = {
@@ -14,12 +13,15 @@ type IngestionJobHistoryPanelProps = {
 };
 
 function IngestionJobHistoryPanel({ dataSourceId, dataSourceName }: IngestionJobHistoryPanelProps) {
-  const [selectedJob, setSelectedJob] = useState<IngestionJobFieldsFragment | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const jobsQuery = useQuery({
     queryKey: ['admin-ingestion-jobs', dataSourceId],
     queryFn: () => fetchAdminIngestionJobs(dataSourceId)
   });
   const jobs = useFragment(IngestionJobFieldsFragmentDoc, jobsQuery.data?.ingestionJobs ?? []);
+  const selectedJob = jobs.find(
+    (job) => job.id === selectedJobId && job.failedItemCount > 0
+  ) ?? null;
   const itemsQuery = useInfiniteQuery({
     enabled: Boolean(selectedJob && selectedJob.failedItemCount > 0),
     queryKey: ['admin-ingestion-job-items', selectedJob?.id, 'FAILED'],
@@ -89,7 +91,7 @@ function IngestionJobHistoryPanel({ dataSourceId, dataSourceName }: IngestionJob
                       className="text-button"
                       aria-label={`${job.id} 실패 상세 보기`}
                       aria-pressed={selectedJob?.id === job.id}
-                      onClick={() => setSelectedJob(job)}
+                      onClick={() => setSelectedJobId(job.id)}
                     >
                       실패 상세
                     </button>

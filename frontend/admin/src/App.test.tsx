@@ -761,6 +761,77 @@ describe('관리자 앱 인증 흐름', () => {
     expect(screen.getByText('모든 항목 실패')).toBeVisible();
   });
 
+  it('선택한 실패 job이 최신 목록에서 성공으로 바뀌면 stale 상세를 닫고 item을 재조회하지 않는다', async () => {
+    let jobsRequestCount = 0;
+    let itemsRequestCount = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.body) {
+        return jsonResponse({
+          headerName: 'X-CSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'csrf-token'
+        });
+      }
+
+      const body = JSON.parse(init.body as string);
+      if (body.query?.includes('AdminDataSources')) {
+        return adminDataSourcesResponse([
+          dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+        ]);
+      }
+      if (body.query?.includes('AdminIngestionJobs')) {
+        jobsRequestCount += 1;
+        return graphqlResponse('ingestionJobs', [
+          ingestionJobFixture(jobsRequestCount === 1
+            ? {
+                id: 'failed-job',
+                status: 'FAILED',
+                errorMessage: '한 항목 실패',
+                failedItemCount: 1
+              }
+            : {
+                id: 'failed-job',
+                status: 'SUCCEEDED',
+                errorMessage: null,
+                succeededItemCount: 1,
+                failedItemCount: 0
+              })
+        ]);
+      }
+      if (body.query?.includes('AdminIngestionJobItems')) {
+        itemsRequestCount += 1;
+        return graphqlResponse('ingestionJobItems', {
+          items: [ingestionJobItemFixture({ externalId: 'database:stale-failure' })],
+          hasNextPage: false,
+          endCursor: null
+        });
+      }
+      if (body.query?.includes('RequestDataSourceSync')) {
+        return graphqlResponse('requestDataSourceSync', ingestionJobFixture({
+          id: 'new-job',
+          status: 'PENDING'
+        }));
+      }
+      throw new Error('예상하지 못한 요청입니다.');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+    fireEvent.click(await screen.findByRole('button', { name: 'Notion 문서함 수집 기록' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'failed-job 실패 상세 보기' }));
+    expect(await screen.findByText('database:stale-failure')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Notion 문서함 수동 수집' }));
+
+    expect(await screen.findByText('SUCCEEDED')).toBeVisible();
+    await waitFor(() => {
+      expect(jobsRequestCount).toBe(2);
+      expect(screen.queryByLabelText('failed-job 실패 상세')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'failed-job 실패 상세 보기' })).not.toBeInTheDocument();
+    expect(itemsRequestCount).toBe(1);
+  });
+
   it('Notion 페이지 데이터소스를 만들 때 페이지 링크를 함께 보낸다', async () => {
     const pageLink = 'https://www.notion.so/greatbooms/Project-Wiki-248104cd477e80fdb757e945d38000bd?pvs=4';
     const fetchMock = vi.fn()
