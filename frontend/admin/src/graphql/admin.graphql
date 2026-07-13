@@ -96,6 +96,21 @@ query AdminIngestionJobs($dataSourceId: ID!, $first: Int = 20) {
   }
 }
 
+query AdminIngestionJobItems(
+  $jobId: ID!
+  $status: IngestionJobItemStatus = FAILED
+  $first: Int = 50
+  $after: String
+) {
+  ingestionJobItems(jobId: $jobId, status: $status, first: $first, after: $after) {
+    items {
+      ...IngestionJobItemFields
+    }
+    hasNextPage
+    endCursor
+  }
+}
+
 mutation CreateUser($input: CreateUserInput!) {
   createUser(input: $input) {
     ...UserFields
@@ -248,7 +263,17 @@ fragment IngestionJobFields on IngestionJob {
   triggerType
   status
   errorMessage
+  succeededItemCount
+  failedItemCount
   startedAt
   finishedAt
   createdAt
+}
+
+fragment IngestionJobItemFields on IngestionJobItem {
+  externalId
+  documentId
+  status
+  reason
+  processedAt
 }

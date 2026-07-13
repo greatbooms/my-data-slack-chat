@@ -6,6 +6,7 @@ import {
   AdminDataSourcesDocument,
   AdminDataSourceFormOptionsDocument,
   type AdminDataSourceFormOptionsQuery,
+  AdminIngestionJobItemsDocument,
   AdminIngestionJobsDocument,
   AdminUsersDocument,
   AdminWorkspaceManagementDocument,
@@ -34,8 +35,11 @@ import {
   type DeleteExternalIdentityMutation,
   type DeleteExternalIdentityMutationVariables,
   type AdminDataSourcesQuery,
+  type AdminIngestionJobItemsQuery,
+  type AdminIngestionJobItemsQueryVariables,
   type AdminIngestionJobsQuery,
   type AdminIngestionJobsQueryVariables,
+  type IngestionJobItemStatus,
   type AdminUsersQuery,
   DisableUserDocument,
   type DisableUserMutation,
@@ -270,6 +274,18 @@ export async function fetchAdminIngestionJobs(
   return await requestAdminGraphql<AdminIngestionJobsQuery, AdminIngestionJobsQueryVariables>(
     AdminIngestionJobsDocument,
     { dataSourceId, first }
+  );
+}
+
+export async function fetchAdminIngestionJobItems(
+  jobId: string,
+  status: IngestionJobItemStatus = 'FAILED',
+  first = 50,
+  after: string | null = null
+): Promise<AdminIngestionJobItemsQuery> {
+  return await requestAdminGraphql<AdminIngestionJobItemsQuery, AdminIngestionJobItemsQueryVariables>(
+    AdminIngestionJobItemsDocument,
+    { jobId, status, first, after }
   );
 }
 
