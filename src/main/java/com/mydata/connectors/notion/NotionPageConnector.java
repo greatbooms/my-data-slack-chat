@@ -97,10 +97,22 @@ public class NotionPageConnector implements DataSourceConnector {
     }
 
     private void processPage(PageWork workItem, Deque<TraversalWork> work, TraversalState state) {
-        ResourceReference reference = workItem.reference();
-        PageLocation location = workItem.location();
+        prependInOrder(work, processPageDocument(
+            workItem.reference(),
+            null,
+            workItem.location(),
+            state
+        ));
+    }
+
+    private List<TraversalWork> processPageDocument(
+        ResourceReference reference,
+        NotionApiClient.NotionPage pageSnapshot,
+        PageLocation location,
+        TraversalState state
+    ) {
         if (!state.visitedPageIds.add(reference.id())) {
-            return;
+            return List.of();
         }
 
         List<String> referencePath = append(
@@ -108,7 +120,7 @@ public class NotionPageConnector implements DataSourceConnector {
         );
         NotionApiClient.NotionPage page;
         try {
-            page = notionClient.retrievePage(reference.id());
+            page = pageSnapshot == null ? notionClient.retrievePage(reference.id()) : pageSnapshot;
         } catch (NotionApiException retrieveFailure) {
             state.sink.onFailure(failure(
                 ConnectorItemType.PAGE,
@@ -117,7 +129,7 @@ public class NotionPageConnector implements DataSourceConnector {
                 ConnectorFailureStage.RETRIEVE,
                 retrieveFailure.getMessage()
             ));
-            return;
+            return List.of();
         }
 
         String title = titleOrFallback(page);
@@ -133,7 +145,7 @@ public class NotionPageConnector implements DataSourceConnector {
                 ConnectorFailureStage.LIST_BLOCKS,
                 blockFailure.getMessage()
             ));
-            return;
+            return List.of();
         }
         String text = documentText(title, page.properties(), pageContent.lines());
         Map<String, Object> metadata = metadata(
@@ -186,12 +198,16 @@ public class NotionPageConnector implements DataSourceConnector {
         PageLocation childLocation = new PageLocation(
             location.rootPageId(), page.id(), title, path, location.database()
         );
-        for (int index = pageContent.childDatabases().size() - 1; index >= 0; index--) {
-            work.addFirst(new DatabaseWork(pageContent.childDatabases().get(index), path, childLocation));
+        List<TraversalWork> deferred = new ArrayList<>(
+            pageContent.childPages().size() + pageContent.childDatabases().size()
+        );
+        for (ResourceReference childPage : pageContent.childPages()) {
+            deferred.add(new PageWork(childPage, childLocation));
         }
-        for (int index = pageContent.childPages().size() - 1; index >= 0; index--) {
-            work.addFirst(new PageWork(pageContent.childPages().get(index), childLocation));
+        for (ResourceReference childDatabase : pageContent.childDatabases()) {
+            deferred.add(new DatabaseWork(childDatabase, path, childLocation));
         }
+        return List.copyOf(deferred);
     }
 
     private void processDatabase(
@@ -280,9 +296,15 @@ public class NotionPageConnector implements DataSourceConnector {
             return;
         }
 
-        List<ResourceReference> rows = batch.items().stream()
-            .map(page -> new ResourceReference(page.id(), page.title()))
-            .toList();
+        List<TraversalWork> deferred = new ArrayList<>();
+        for (NotionApiClient.NotionPage page : batch.items()) {
+            deferred.addAll(processPageDocument(
+                new ResourceReference(page.id(), page.title()),
+                page,
+                workItem.rowLocation(),
+                state
+            ));
+        }
         if (batch.nextCursor() != null) {
             work.addFirst(new DatabaseBatchWork(
                 workItem.database(),
@@ -292,9 +314,7 @@ public class NotionPageConnector implements DataSourceConnector {
                 batch.nextCursor()
             ));
         }
-        for (int index = rows.size() - 1; index >= 0; index--) {
-            work.addFirst(new PageWork(rows.get(index), workItem.rowLocation()));
-        }
+        prependInOrder(work, deferred);
     }
 
     private Map<String, Object> metadata(
@@ -417,6 +437,12 @@ public class NotionPageConnector implements DataSourceConnector {
         List<String> appended = new ArrayList<>(values);
         appended.add(value);
         return List.copyOf(appended);
+    }
+
+    private void prependInOrder(Deque<TraversalWork> work, List<TraversalWork> values) {
+        for (int index = values.size() - 1; index >= 0; index--) {
+            work.addFirst(values.get(index));
+        }
     }
 
     private String documentText(String title, Map<String, String> properties, List<String> lines) {

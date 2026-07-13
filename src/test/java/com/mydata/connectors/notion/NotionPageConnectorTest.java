@@ -180,16 +180,16 @@ class NotionPageConnectorTest {
 
         assertThat(documents)
             .extracting(RawExternalDocument::externalId)
-            .containsExactly("row-1", "row-child", "row-2");
+            .containsExactly("row-1", "row-2", "row-child");
         assertThat(events)
             .extracting(event -> event.reference().qualifiedExternalId())
-            .containsExactly("page:row-1", "page:row-child", "page:row-2");
+            .containsExactly("page:row-1", "page:row-2", "page:row-child");
         assertThat(events)
             .extracting(event -> event.reference().path())
             .containsExactly(
                 List.of("Roadmap", "First task"),
-                List.of("Roadmap", "First task", "Nested detail"),
-                List.of("Roadmap", "Second task")
+                List.of("Roadmap", "Second task"),
+                List.of("Roadmap", "First task", "Nested detail")
             );
 
         RawExternalDocument first = documents.get(0);
@@ -216,7 +216,7 @@ class NotionPageConnectorTest {
         assertThat(first.aclEntries()).singleElement()
             .satisfies(acl -> assertThat(acl.principalKey()).isEqualTo(PrincipalKeys.user(ownerId)));
 
-        RawExternalDocument nested = documents.get(1);
+        RawExternalDocument nested = documents.get(2);
         assertThat(nested.title()).isEqualTo("Nested detail");
         assertThat(nested.content().text()).isEqualTo("""
             Nested detail
@@ -236,7 +236,7 @@ class NotionPageConnectorTest {
             .containsEntry("notionApiParentId", "row-1");
         assertThat(nested.metadata()).doesNotContainKey("notionRootPageId");
 
-        RawExternalDocument second = documents.get(2);
+        RawExternalDocument second = documents.get(1);
         assertThat(second.content().text()).isEqualTo("""
             Second task
             Done: true
@@ -244,6 +244,55 @@ class NotionPageConnectorTest {
         assertThat(second.metadata())
             .containsEntry("notionPath", List.of("Roadmap", "Second task"))
             .containsEntry("notionProperties", Map.of("Done", "true"));
+    }
+
+    @Test
+    void databaseBatchEmitsAllRowDocumentsBeforeDeferredNestedWorkWithoutRetrievingRows() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root", "workspace", null, Map.of());
+        notion.page("row-1", "First row", "https://notion.so/row-1");
+        notion.page("row-2", "Second row", "https://notion.so/row-2");
+        notion.page("row-child", "Row child", "https://notion.so/row-child");
+        notion.page("nested-row", "Nested row", "https://notion.so/nested-row");
+        notion.blocks("root", block("database-1", "child_database", "Roadmap", false));
+        notion.blocks("row-1",
+            block("row-child", "child_page", "Row child", false),
+            block("database-2", "child_database", "Subtasks", false)
+        );
+        notion.blocks("row-2");
+        notion.blocks("row-child");
+        notion.blocks("nested-row");
+        notion.database(
+            "database-1", "Roadmap", "https://notion.so/database-1",
+            new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
+        );
+        notion.database(
+            "database-2", "Subtasks", "https://notion.so/database-2",
+            new NotionApiClient.NotionDataSource("data-source-2", "Subtasks")
+        );
+        notion.queryPages("data-source-1", "row-1", "row-2");
+        notion.queryPages("data-source-2", "nested-row");
+        notion.failPage("row-1", new NotionApiException(429, "rate_limited"));
+        notion.failPage("row-2", new NotionApiException(429, "rate_limited"));
+        notion.failPage("nested-row", new NotionApiException(429, "rate_limited"));
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "row-1", "row-2", "row-child", "nested-row");
+        assertThat(notion.retrievePageCalls("row-1")).isZero();
+        assertThat(notion.retrievePageCalls("row-2")).isZero();
+        assertThat(notion.retrievePageCalls("row-child")).isOne();
+        assertThat(notion.retrievePageCalls("nested-row")).isZero();
+        assertThat(sink.failures).isEmpty();
     }
 
     @Test
@@ -297,16 +346,13 @@ class NotionPageConnectorTest {
             block("child", "child_page", "Child", false),
             block("database-1", "child_database", "Roadmap", false)
         );
-        notion.blocks("child",
-            block("row-1", "child_page", "First row", false),
-            block("database-1", "child_database", "Roadmap", false)
-        );
+        notion.blocks("child", block("database-1", "child_database", "Roadmap", false));
         notion.blocks("row-1");
         notion.database(
             "database-1", "Roadmap", "https://notion.so/database-1",
             new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
         );
-        notion.queryPages("data-source-1", "row-1");
+        notion.queryPages("data-source-1", "row-1", "row-1");
         DataSourceEntity dataSource = dataSource(
             UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
         );
@@ -320,7 +366,7 @@ class NotionPageConnectorTest {
         assertThat(sink.documents)
             .extracting(event -> event.document().externalId())
             .containsExactly("root", "child", "row-1");
-        assertThat(notion.retrievePageCalls("row-1")).isOne();
+        assertThat(notion.retrievePageCalls("row-1")).isZero();
         assertThat(notion.retrieveDatabaseCalls("database-1")).isOne();
         assertThat(notion.queryCalls("data-source-1")).isOne();
         assertThat(sink.failures).isEmpty();
@@ -371,12 +417,14 @@ class NotionPageConnectorTest {
         FakeNotionClient notion = new FakeNotionClient();
         notion.page("root", "Root", "https://notion.so/root");
         notion.page("row-1", "First row", "https://notion.so/row-1");
+        notion.page("row-child", "Row child", "https://notion.so/row-child");
         notion.page("row-2", "Second row", "https://notion.so/row-2");
         notion.blocks("root",
             block("database-1", "child_database", "Roadmap", false),
             block("database-2", "child_database", "Archive", false)
         );
-        notion.blocks("row-1");
+        notion.blocks("row-1", block("row-child", "child_page", "Row child", false));
+        notion.blocks("row-child");
         notion.blocks("row-2");
         notion.database(
             "database-1", "Roadmap", "https://notion.so/database-1",
@@ -401,7 +449,14 @@ class NotionPageConnectorTest {
 
         assertThat(sink.documents)
             .extracting(event -> event.document().externalId())
-            .containsExactly("root", "row-1", "row-2");
+            .containsExactly("root", "row-1", "row-child", "row-2");
+        assertThat(sink.order).containsExactly(
+            "document:root",
+            "document:row-1",
+            "document:row-child",
+            "failure:database:database-1",
+            "document:row-2"
+        );
         assertThat(sink.failures).singleElement().satisfies(failure -> {
             assertThat(failure.reference().qualifiedExternalId()).isEqualTo("database:database-1");
             assertThat(failure.reference().displayPath()).isEqualTo("Root / Roadmap");
@@ -729,15 +784,18 @@ class NotionPageConnectorTest {
     private static final class RecordingSink implements ConnectorEventSink {
         private final List<ConnectorDocumentEvent> documents = new ArrayList<>();
         private final List<ConnectorFailureEvent> failures = new ArrayList<>();
+        private final List<String> order = new ArrayList<>();
 
         @Override
         public void onDocument(ConnectorDocumentEvent event) {
             documents.add(event);
+            order.add("document:" + event.document().externalId());
         }
 
         @Override
         public void onFailure(ConnectorFailureEvent event) {
             failures.add(event);
+            order.add("failure:" + event.reference().qualifiedExternalId());
         }
     }
 
