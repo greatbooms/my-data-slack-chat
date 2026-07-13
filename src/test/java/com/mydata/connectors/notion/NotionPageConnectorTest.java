@@ -4,6 +4,7 @@ import com.mydata.auth.PrincipalKeys;
 import com.mydata.connectors.core.ConnectorDocumentEvent;
 import com.mydata.connectors.core.ConnectorEventSink;
 import com.mydata.connectors.core.ConnectorFailureEvent;
+import com.mydata.connectors.core.ConnectorFailureStage;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceSnapshot;
@@ -245,7 +246,325 @@ class NotionPageConnectorTest {
     }
 
     @Test
-    void fetchChangesRejectsDatabaseWithMultipleDataSources() {
+    void fetchChangesDiscoversDatabasesUnderRootChildAndRowPages() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("child", "Child", "https://notion.so/child");
+        notion.page("row-1", "First row", "https://notion.so/row-1");
+        notion.page("row-2", "Second row", "https://notion.so/row-2");
+        notion.blocks("root", block("child", "child_page", "Child", false));
+        notion.blocks("child", block("database-1", "child_database", "Roadmap", false));
+        notion.blocks("row-1", block("database-2", "child_database", "Subtasks", false));
+        notion.blocks("row-2");
+        notion.database(
+            "database-1", "Roadmap", "https://notion.so/database-1",
+            new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
+        );
+        notion.database(
+            "database-2", "Subtasks", "https://notion.so/database-2",
+            new NotionApiClient.NotionDataSource("data-source-2", "Subtasks")
+        );
+        notion.queryPages("data-source-1", "row-1");
+        notion.queryPages("data-source-2", "row-2");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "child", "row-1", "row-2");
+        assertThat(sink.documents.get(2).reference().path())
+            .containsExactly("Root", "Child", "Roadmap", "First row");
+        assertThat(sink.documents.get(3).reference().path())
+            .containsExactly("Root", "Child", "Roadmap", "First row", "Subtasks", "Second row");
+        assertThat(sink.failures).isEmpty();
+    }
+
+    @Test
+    void fetchChangesDeduplicatesPagesAndDatabasesAcrossAllDiscoveryPaths() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("child", "Child", "https://notion.so/child");
+        notion.page("row-1", "First row", "https://notion.so/row-1");
+        notion.blocks("root",
+            block("child", "child_page", "Child", false),
+            block("database-1", "child_database", "Roadmap", false)
+        );
+        notion.blocks("child",
+            block("row-1", "child_page", "First row", false),
+            block("database-1", "child_database", "Roadmap", false)
+        );
+        notion.blocks("row-1");
+        notion.database(
+            "database-1", "Roadmap", "https://notion.so/database-1",
+            new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
+        );
+        notion.queryPages("data-source-1", "row-1");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "child", "row-1");
+        assertThat(notion.retrieveDatabaseCalls("database-1")).isOne();
+        assertThat(notion.queryCalls("data-source-1")).isOne();
+        assertThat(sink.failures).isEmpty();
+    }
+
+    @Test
+    void childDatabaseFailureEmitsFailureAndContinuesWithSiblingDatabase() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("good-row", "Visible row", "https://notion.so/good-row");
+        notion.blocks("root",
+            block("database-bad", "child_database", "Hidden DB", false),
+            block("database-good", "child_database", "Visible DB", false)
+        );
+        notion.blocks("good-row");
+        notion.failDatabase("database-bad", new NotionApiException(404, "object_not_found"));
+        notion.database(
+            "database-good", "Visible DB", "https://notion.so/database-good",
+            new NotionApiClient.NotionDataSource("data-source-good", "Visible DB")
+        );
+        notion.queryPages("data-source-good", "good-row");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "good-row");
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().type()).isEqualTo(ConnectorItemType.DATABASE);
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("database:database-bad");
+            assertThat(failure.reference().displayPath()).isEqualTo("Root / Hidden DB");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.RETRIEVE);
+            assertThat(failure.userSafeReason())
+                .contains("원본 database를 integration에 공유하세요")
+                .doesNotContain("token", "response body");
+        });
+    }
+
+    @Test
+    void queryFailureAfterFirstBatchKeepsRowsAndContinuesWithSiblingDatabase() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("row-1", "First row", "https://notion.so/row-1");
+        notion.page("row-2", "Second row", "https://notion.so/row-2");
+        notion.blocks("root",
+            block("database-1", "child_database", "Roadmap", false),
+            block("database-2", "child_database", "Archive", false)
+        );
+        notion.blocks("row-1");
+        notion.blocks("row-2");
+        notion.database(
+            "database-1", "Roadmap", "https://notion.so/database-1",
+            new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
+        );
+        notion.database(
+            "database-2", "Archive", "https://notion.so/database-2",
+            new NotionApiClient.NotionDataSource("data-source-2", "Archive")
+        );
+        notion.queryPages("data-source-1", "row-1");
+        notion.failQueryAfterBatches("data-source-1", new NotionApiException(404, "object_not_found"));
+        notion.queryPages("data-source-2", "row-2");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "row-1", "row-2");
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("database:database-1");
+            assertThat(failure.reference().displayPath()).isEqualTo("Root / Roadmap");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.QUERY);
+        });
+    }
+
+    @Test
+    void rowBlockFailureEmitsPageFailureAndContinuesWithNextRow() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("row-1", "Broken row", "https://notion.so/row-1");
+        notion.page("row-2", "Healthy row", "https://notion.so/row-2");
+        notion.blocks("root", block("database-1", "child_database", "Roadmap", false));
+        notion.failBlocks("row-1", new NotionApiException(403, "restricted_resource"));
+        notion.blocks("row-2");
+        notion.database(
+            "database-1", "Roadmap", "https://notion.so/database-1",
+            new NotionApiClient.NotionDataSource("data-source-1", "Roadmap")
+        );
+        notion.queryPages("data-source-1", "row-1", "row-2");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "row-2");
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("page:row-1");
+            assertThat(failure.reference().displayPath()).isEqualTo("Root / Roadmap / Broken row");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.LIST_BLOCKS);
+        });
+    }
+
+    @Test
+    void childPageFailureEmitsFailureAndContinuesWithSiblingPage() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("child-b", "Healthy child", "https://notion.so/child-b");
+        notion.blocks("root",
+            block("child-a", "child_page", "Hidden child", false),
+            block("child-b", "child_page", "Healthy child", false)
+        );
+        notion.blocks("child-b");
+        notion.failPage("child-a", new NotionApiException(404, "object_not_found"));
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root", "child-b");
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("page:child-a");
+            assertThat(failure.reference().displayPath()).isEqualTo("Root / Hidden child");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.RETRIEVE);
+        });
+    }
+
+    @Test
+    void unsupportedDatabaseBlockEmitsBlockFailureWithoutFollowingLinkToPage() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.blocks("root",
+            new NotionApiClient.NotionBlock(
+                "unsupported-1", "unsupported", "Linked database", false, "child_database"
+            ),
+            block("link-1", "link_to_page", "External page", false)
+        );
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        RecordingSink sink = new RecordingSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.documents)
+            .extracting(event -> event.document().externalId())
+            .containsExactly("root");
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("block:unsupported-1");
+            assertThat(failure.reference().displayPath()).isEqualTo("Root / Linked database");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.RETRIEVE);
+            assertThat(failure.userSafeReason()).contains("child_database");
+        });
+        assertThat(notion.retrievePageCalls("link-1")).isZero();
+        assertThat(notion.retrieveDatabaseCalls("link-1")).isZero();
+        assertThat(notion.retrievePageCalls("unsupported-1")).isZero();
+        assertThat(notion.retrieveDatabaseCalls("unsupported-1")).isZero();
+    }
+
+    @Test
+    void documentSinkInfrastructureFailurePropagates() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.blocks("root");
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        ConnectorEventSink failingSink = new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+                throw new IllegalStateException("document sink unavailable");
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new AssertionError("failure event should not replace the infrastructure exception");
+            }
+        };
+
+        assertThatThrownBy(() -> new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), failingSink
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("document sink unavailable");
+    }
+
+    @Test
+    void failureSinkInfrastructureFailurePropagates() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.blocks("root", block("database-bad", "child_database", "Hidden DB", false));
+        notion.failDatabase("database-bad", new NotionApiException(404, "object_not_found"));
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        ConnectorEventSink failingSink = new ConnectorEventSink() {
+            @Override
+            public void onDocument(ConnectorDocumentEvent event) {
+            }
+
+            @Override
+            public void onFailure(ConnectorFailureEvent event) {
+                throw new IllegalStateException("failure sink unavailable");
+            }
+        };
+
+        assertThatThrownBy(() -> new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), failingSink
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("failure sink unavailable");
+    }
+
+    @Test
+    void fetchChangesReportsDatabaseWithMultipleDataSources() {
         DataSourceEntity dataSource = dataSource(UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE);
         dataSource.putConfig(NotionPageConnector.DATABASE_ID_CONFIG_KEY, "database-1");
         FakeNotionClient notion = new FakeNotionClient();
@@ -253,13 +572,19 @@ class NotionPageConnectorTest {
             new NotionApiClient.NotionDataSource("data-source-1", "Main"),
             new NotionApiClient.NotionDataSource("data-source-2", "Archive"));
         NotionPageConnector connector = new NotionPageConnector(notion);
+        RecordingSink sink = new RecordingSink();
 
-        assertThatThrownBy(() -> connector.fetchChanges(
+        connector.fetchChanges(
             snapshot(dataSource, new SyncCursor(Map.of())),
-            documentSink(new ArrayList<>())
-        ))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("data source가 1개");
+            sink
+        );
+
+        assertThat(sink.documents).isEmpty();
+        assertThat(sink.failures).singleElement().satisfies(failure -> {
+            assertThat(failure.reference().qualifiedExternalId()).isEqualTo("database:database-1");
+            assertThat(failure.stage()).isEqualTo(ConnectorFailureStage.RETRIEVE);
+            assertThat(failure.userSafeReason()).contains("data source가 1개");
+        });
     }
 
     @Test
@@ -328,6 +653,21 @@ class NotionPageConnectorTest {
         };
     }
 
+    private static final class RecordingSink implements ConnectorEventSink {
+        private final List<ConnectorDocumentEvent> documents = new ArrayList<>();
+        private final List<ConnectorFailureEvent> failures = new ArrayList<>();
+
+        @Override
+        public void onDocument(ConnectorDocumentEvent event) {
+            documents.add(event);
+        }
+
+        @Override
+        public void onFailure(ConnectorFailureEvent event) {
+            failures.add(event);
+        }
+    }
+
     private static NotionApiClient.NotionBlock block(
         String id,
         String type,
@@ -348,8 +688,15 @@ class NotionPageConnectorTest {
     private static class FakeNotionClient implements NotionClient {
         private final Map<String, NotionApiClient.NotionPage> pages = new java.util.LinkedHashMap<>();
         private final Map<String, NotionApiClient.NotionDatabase> databases = new java.util.LinkedHashMap<>();
-        private final Map<String, List<String>> dataSourcePages = new java.util.LinkedHashMap<>();
+        private final Map<String, List<List<String>>> dataSourcePageBatches = new java.util.LinkedHashMap<>();
         private final Map<String, List<NotionApiClient.NotionBlock>> blockChildren = new java.util.LinkedHashMap<>();
+        private final Map<String, NotionApiException> pageFailures = new java.util.LinkedHashMap<>();
+        private final Map<String, NotionApiException> databaseFailures = new java.util.LinkedHashMap<>();
+        private final Map<String, NotionApiException> queryFailures = new java.util.LinkedHashMap<>();
+        private final Map<String, NotionApiException> blockFailures = new java.util.LinkedHashMap<>();
+        private final Map<String, Integer> retrievePageCalls = new java.util.LinkedHashMap<>();
+        private final Map<String, Integer> retrieveDatabaseCalls = new java.util.LinkedHashMap<>();
+        private final Map<String, Integer> queryCalls = new java.util.LinkedHashMap<>();
 
         void page(String id, String title, String url) {
             page(id, title, url, "root-page".equals(id) ? "workspace" : "page_id",
@@ -378,20 +725,58 @@ class NotionPageConnectorTest {
         }
 
         void queryPages(String dataSourceId, String... pageIds) {
-            dataSourcePages.put(dataSourceId, List.of(pageIds));
+            dataSourcePageBatches.put(dataSourceId, List.of(List.of(pageIds)));
         }
 
         void blocks(String id, NotionApiClient.NotionBlock... blocks) {
             blockChildren.put(id, List.of(blocks));
         }
 
+        void failPage(String pageId, NotionApiException failure) {
+            pageFailures.put(pageId, failure);
+        }
+
+        void failDatabase(String databaseId, NotionApiException failure) {
+            databaseFailures.put(databaseId, failure);
+        }
+
+        void failQueryAfterBatches(String dataSourceId, NotionApiException failure) {
+            queryFailures.put(dataSourceId, failure);
+        }
+
+        void failBlocks(String blockId, NotionApiException failure) {
+            blockFailures.put(blockId, failure);
+        }
+
+        int retrievePageCalls(String pageId) {
+            return retrievePageCalls.getOrDefault(pageId, 0);
+        }
+
+        int retrieveDatabaseCalls(String databaseId) {
+            return retrieveDatabaseCalls.getOrDefault(databaseId, 0);
+        }
+
+        int queryCalls(String dataSourceId) {
+            return queryCalls.getOrDefault(dataSourceId, 0);
+        }
+
         @Override
         public NotionApiClient.NotionPage retrievePage(String pageId) {
+            retrievePageCalls.merge(pageId, 1, Integer::sum);
+            NotionApiException failure = pageFailures.get(pageId);
+            if (failure != null) {
+                throw failure;
+            }
             return pages.get(pageId);
         }
 
         @Override
         public NotionApiClient.NotionDatabase retrieveDatabase(String databaseId) {
+            retrieveDatabaseCalls.merge(databaseId, 1, Integer::sum);
+            NotionApiException failure = databaseFailures.get(databaseId);
+            if (failure != null) {
+                throw failure;
+            }
             return databases.get(databaseId);
         }
 
@@ -400,9 +785,14 @@ class NotionPageConnectorTest {
             String dataSourceId,
             Consumer<List<NotionApiClient.NotionPage>> batchConsumer
         ) {
-            batchConsumer.accept(dataSourcePages.getOrDefault(dataSourceId, List.of()).stream()
-                .map(pages::get)
-                .toList());
+            queryCalls.merge(dataSourceId, 1, Integer::sum);
+            for (List<String> batch : dataSourcePageBatches.getOrDefault(dataSourceId, List.of())) {
+                batchConsumer.accept(batch.stream().map(pages::get).toList());
+            }
+            NotionApiException failure = queryFailures.get(dataSourceId);
+            if (failure != null) {
+                throw failure;
+            }
         }
 
         @Override
@@ -410,6 +800,10 @@ class NotionPageConnectorTest {
             String blockId,
             Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
         ) {
+            NotionApiException failure = blockFailures.get(blockId);
+            if (failure != null) {
+                throw failure;
+            }
             batchConsumer.accept(blockChildren.getOrDefault(blockId, List.of()));
         }
     }

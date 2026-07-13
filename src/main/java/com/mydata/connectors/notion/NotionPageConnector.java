@@ -2,6 +2,8 @@ package com.mydata.connectors.notion;
 
 import com.mydata.connectors.core.ConnectorDocumentEvent;
 import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorFailureEvent;
+import com.mydata.connectors.core.ConnectorFailureStage;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceConnector;
@@ -43,45 +45,31 @@ public class NotionPageConnector implements DataSourceConnector {
 
     @Override
     public SyncCursor fetchChanges(DataSourceSnapshot dataSource, ConnectorEventSink sink) {
-        String principalKey = dataSource.visibilityPrincipalKey();
         String rootPageId = optionalConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
         String databaseId = optionalConfig(dataSource, DATABASE_ID_CONFIG_KEY);
 
         if (rootPageId != null && databaseId != null) {
             throw new IllegalArgumentException("NOTION 설정은 notionRootPageId 또는 notionDatabaseId 중 하나만 사용할 수 있습니다");
         }
+        TraversalState state = new TraversalState(dataSource.visibilityPrincipalKey(), sink);
         if (databaseId != null) {
-            fetchDatabase(databaseId, principalKey, sink);
+            fetchDatabase(
+                new ResourceReference(databaseId, databaseId),
+                List.of(),
+                new PageLocation(null, null, null, List.of(), null),
+                state
+            );
             return dataSource.cursor();
         }
 
         rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
-        fetchPage(rootPageId, rootPageId, null, null, List.of(), 0, principalKey, sink, new HashSet<>());
+        fetchPage(
+            new ResourceReference(rootPageId, rootPageId),
+            null,
+            new PageLocation(rootPageId, null, null, List.of(), null),
+            state
+        );
         return dataSource.cursor();
-    }
-
-    private void fetchDatabase(String databaseId, String principalKey, ConnectorEventSink sink) {
-        NotionApiClient.NotionDatabase database = notionClient.retrieveDatabase(databaseId);
-        NotionApiClient.NotionDataSource dataSource = singleDataSource(database);
-        String databaseTitle = titleOrFallback(database.title(), database.id());
-        Set<String> visitedPageIds = new HashSet<>();
-        notionClient.queryDataSourcePages(dataSource.id(), pages -> {
-            for (NotionApiClient.NotionPage page : pages) {
-                fetchDatabasePage(
-                    database,
-                    databaseTitle,
-                    dataSource,
-                    page,
-                    null,
-                    databaseTitle,
-                    List.of(databaseTitle),
-                    1,
-                    principalKey,
-                    sink,
-                    visitedPageIds
-                );
-            }
-        });
     }
 
     private NotionApiClient.NotionDataSource singleDataSource(NotionApiClient.NotionDatabase database) {
@@ -91,33 +79,64 @@ public class NotionPageConnector implements DataSourceConnector {
         return database.dataSources().getFirst();
     }
 
-    private void fetchDatabasePage(
-        NotionApiClient.NotionDatabase database,
-        String databaseTitle,
-        NotionApiClient.NotionDataSource dataSource,
-        NotionApiClient.NotionPage page,
-        String parentPageId,
-        String parentTitle,
-        List<String> parentPath,
-        int depth,
-        String principalKey,
-        ConnectorEventSink sink,
-        Set<String> visitedPageIds
+    private void fetchPage(
+        ResourceReference reference,
+        NotionApiClient.NotionPage pageSnapshot,
+        PageLocation location,
+        TraversalState state
     ) {
-        if (!visitedPageIds.add(page.id())) {
+        if (!state.visitedPageIds.add(reference.id())) {
+            return;
+        }
+
+        List<String> referencePath = append(
+            location.parentPath(), titleOrFallback(reference.title(), reference.id())
+        );
+        NotionApiClient.NotionPage page;
+        try {
+            page = pageSnapshot == null ? notionClient.retrievePage(reference.id()) : pageSnapshot;
+        } catch (NotionApiException retrieveFailure) {
+            state.sink.onFailure(failure(
+                ConnectorItemType.PAGE,
+                reference.id(),
+                referencePath,
+                ConnectorFailureStage.RETRIEVE,
+                retrieveFailure.getMessage()
+            ));
             return;
         }
 
         String title = titleOrFallback(page);
-        List<String> path = new ArrayList<>(parentPath);
-        path.add(title);
-        PageContent pageContent = collectPageContent(page.id());
+        List<String> path = append(location.parentPath(), title);
+        PageContent pageContent;
+        try {
+            pageContent = collectPageContent(page.id());
+        } catch (NotionApiException blockFailure) {
+            state.sink.onFailure(failure(
+                ConnectorItemType.PAGE,
+                page.id(),
+                path,
+                ConnectorFailureStage.LIST_BLOCKS,
+                blockFailure.getMessage()
+            ));
+            return;
+        }
         String text = documentText(title, page.properties(), pageContent.lines());
-        Map<String, Object> metadata = metadata(page, null, parentPageId, parentTitle, path, depth);
-        metadata.put("notionDatabaseId", database.id());
-        metadata.put("notionDatabaseTitle", databaseTitle);
-        metadata.put("notionDataSourceId", dataSource.id());
-        putIfPresent(metadata, "notionDataSourceName", dataSource.name());
+        Map<String, Object> metadata = metadata(
+            page,
+            location.rootPageId(),
+            location.parentPageId(),
+            location.parentTitle(),
+            path,
+            path.size() - 1
+        );
+        if (location.database() != null) {
+            DatabaseContext database = location.database();
+            metadata.put("notionDatabaseId", database.id());
+            metadata.put("notionDatabaseTitle", database.title());
+            metadata.put("notionDataSourceId", database.dataSource().id());
+            putIfPresent(metadata, "notionDataSourceName", database.dataSource().name());
+        }
 
         RawExternalDocument document = new RawExternalDocument(
             page.id(),
@@ -130,73 +149,109 @@ public class NotionPageConnector implements DataSourceConnector {
             sha256(text),
             metadata,
             new RawContent(text, MIME_TYPE),
-            List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
+            List.of(new RawAclEntry(state.principalKey, "READ", false, "NOTION"))
         );
-        sink.onDocument(new ConnectorDocumentEvent(
+        state.sink.onDocument(new ConnectorDocumentEvent(
             document,
             new ConnectorItemReference(ConnectorItemType.PAGE, page.id(), title, path)
         ));
 
-        for (String childPageId : pageContent.childPageIds()) {
-            NotionApiClient.NotionPage childPage = notionClient.retrievePage(childPageId);
-            fetchDatabasePage(
-                database,
-                databaseTitle,
-                dataSource,
-                childPage,
-                page.id(),
-                title,
-                path,
-                depth + 1,
-                principalKey,
-                sink,
-                visitedPageIds
+        for (NotionApiClient.NotionBlock unsupported : pageContent.unsupportedDatabaseBlocks()) {
+            List<String> blockPath = append(
+                path, titleOrFallback(unsupported.plainText(), unsupported.id())
             );
+            state.sink.onFailure(failure(
+                ConnectorItemType.BLOCK,
+                unsupported.id(),
+                blockPath,
+                ConnectorFailureStage.RETRIEVE,
+                "Notion API가 child_database 블록의 원본 database ID를 제공하지 않았습니다"
+            ));
+        }
+
+        PageLocation childLocation = new PageLocation(
+            location.rootPageId(), page.id(), title, path, location.database()
+        );
+        for (ResourceReference childPage : pageContent.childPages()) {
+            fetchPage(childPage, null, childLocation, state);
+        }
+        for (ResourceReference childDatabase : pageContent.childDatabases()) {
+            fetchDatabase(childDatabase, path, childLocation, state);
         }
     }
 
-    private void fetchPage(
-        String pageId,
-        String rootPageId,
-        String parentPageId,
-        String parentTitle,
+    private void fetchDatabase(
+        ResourceReference reference,
         List<String> parentPath,
-        int depth,
-        String principalKey,
-        ConnectorEventSink sink,
-        Set<String> visitedPageIds
+        PageLocation parent,
+        TraversalState state
     ) {
-        if (!visitedPageIds.add(pageId)) {
+        if (!state.visitedDatabaseIds.add(reference.id())) {
             return;
         }
 
-        NotionApiClient.NotionPage page = notionClient.retrievePage(pageId);
-        String title = titleOrFallback(page);
-        List<String> path = new ArrayList<>(parentPath);
-        path.add(title);
-        PageContent pageContent = collectPageContent(pageId);
-        String text = documentText(title, page.properties(), pageContent.lines());
-
-        RawExternalDocument document = new RawExternalDocument(
-            page.id(),
-            DataSourceType.NOTION,
-            title,
-            page.url(),
-            MIME_TYPE,
-            page.createdTime(),
-            page.lastEditedTime(),
-            sha256(text),
-            metadata(page, rootPageId, parentPageId, parentTitle, path, depth),
-            new RawContent(text, MIME_TYPE),
-            List.of(new RawAclEntry(principalKey, "READ", false, "NOTION"))
+        List<String> referencePath = append(
+            parentPath, titleOrFallback(reference.title(), reference.id())
         );
-        sink.onDocument(new ConnectorDocumentEvent(
-            document,
-            new ConnectorItemReference(ConnectorItemType.PAGE, page.id(), title, path)
-        ));
+        NotionApiClient.NotionDatabase database;
+        try {
+            database = notionClient.retrieveDatabase(reference.id());
+        } catch (NotionApiException retrieveFailure) {
+            state.sink.onFailure(failure(
+                ConnectorItemType.DATABASE,
+                reference.id(),
+                referencePath,
+                ConnectorFailureStage.RETRIEVE,
+                databaseReason(retrieveFailure)
+            ));
+            return;
+        }
 
-        for (String childPageId : pageContent.childPageIds()) {
-            fetchPage(childPageId, rootPageId, page.id(), title, path, depth + 1, principalKey, sink, visitedPageIds);
+        String databaseTitle = titleOrFallback(database.title(), database.id());
+        List<String> databasePath = append(parentPath, databaseTitle);
+        NotionApiClient.NotionDataSource dataSource;
+        try {
+            dataSource = singleDataSource(database);
+        } catch (IllegalArgumentException invalidDatabase) {
+            state.sink.onFailure(failure(
+                ConnectorItemType.DATABASE,
+                reference.id(),
+                databasePath,
+                ConnectorFailureStage.RETRIEVE,
+                invalidDatabase.getMessage()
+            ));
+            return;
+        }
+
+        DatabaseContext context = new DatabaseContext(database.id(), databaseTitle, dataSource);
+        String rowParentTitle = parent.parentTitle();
+        if (parent.parentPageId() == null && rowParentTitle == null) {
+            rowParentTitle = databaseTitle;
+        }
+        String finalRowParentTitle = rowParentTitle;
+        try {
+            notionClient.queryDataSourcePages(dataSource.id(), pages -> pages.forEach(page ->
+                fetchPage(
+                    new ResourceReference(page.id(), page.title()),
+                    page,
+                    new PageLocation(
+                        parent.rootPageId(),
+                        parent.parentPageId(),
+                        finalRowParentTitle,
+                        databasePath,
+                        context
+                    ),
+                    state
+                )
+            ));
+        } catch (NotionApiException queryFailure) {
+            state.sink.onFailure(failure(
+                ConnectorItemType.DATABASE,
+                reference.id(),
+                databasePath,
+                ConnectorFailureStage.QUERY,
+                databaseReason(queryFailure)
+            ));
         }
     }
 
@@ -239,26 +294,46 @@ public class NotionPageConnector implements DataSourceConnector {
 
     private PageContent collectPageContent(String pageId) {
         List<String> lines = new ArrayList<>();
-        List<String> childPageIds = new ArrayList<>();
-        collectBlockChildren(pageId, lines, childPageIds, new HashSet<>());
-        return new PageContent(lines, childPageIds);
+        List<ResourceReference> childPages = new ArrayList<>();
+        List<ResourceReference> childDatabases = new ArrayList<>();
+        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks = new ArrayList<>();
+        collectBlockChildren(
+            pageId,
+            lines,
+            childPages,
+            childDatabases,
+            unsupportedDatabaseBlocks,
+            new HashSet<>()
+        );
+        return new PageContent(lines, childPages, childDatabases, unsupportedDatabaseBlocks);
     }
 
     private void collectBlockChildren(
         String blockId,
         List<String> lines,
-        List<String> childPageIds,
+        List<ResourceReference> childPages,
+        List<ResourceReference> childDatabases,
+        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks,
         Set<String> visitedBlockIds
     ) {
         notionClient.listBlockChildren(blockId, blocks ->
-            collectBlocks(blocks, lines, childPageIds, visitedBlockIds)
+            collectBlocks(
+                blocks,
+                lines,
+                childPages,
+                childDatabases,
+                unsupportedDatabaseBlocks,
+                visitedBlockIds
+            )
         );
     }
 
     private void collectBlocks(
         List<NotionApiClient.NotionBlock> blocks,
         List<String> lines,
-        List<String> childPageIds,
+        List<ResourceReference> childPages,
+        List<ResourceReference> childDatabases,
+        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks,
         Set<String> visitedBlockIds
     ) {
         for (NotionApiClient.NotionBlock block : blocks) {
@@ -270,13 +345,61 @@ public class NotionPageConnector implements DataSourceConnector {
                 lines.add(block.plainText().trim());
             }
             if ("child_page".equals(block.type())) {
-                childPageIds.add(block.id());
+                childPages.add(new ResourceReference(block.id(), block.plainText()));
+                continue;
+            }
+            if ("child_database".equals(block.type())) {
+                childDatabases.add(new ResourceReference(block.id(), block.plainText()));
+                continue;
+            }
+            if ("unsupported".equals(block.type())
+                && "child_database".equals(block.underlyingType())) {
+                unsupportedDatabaseBlocks.add(block);
+                continue;
+            }
+            if ("link_to_page".equals(block.type())) {
                 continue;
             }
             if (block.hasChildren()) {
-                collectBlockChildren(block.id(), lines, childPageIds, visitedBlockIds);
+                collectBlockChildren(
+                    block.id(),
+                    lines,
+                    childPages,
+                    childDatabases,
+                    unsupportedDatabaseBlocks,
+                    visitedBlockIds
+                );
             }
         }
+    }
+
+    private ConnectorFailureEvent failure(
+        ConnectorItemType type,
+        String externalId,
+        List<String> path,
+        ConnectorFailureStage stage,
+        String reason
+    ) {
+        String title = path.isEmpty() ? externalId : path.getLast();
+        return new ConnectorFailureEvent(
+            new ConnectorItemReference(type, externalId, title, path),
+            stage,
+            reason
+        );
+    }
+
+    private String databaseReason(NotionApiException error) {
+        if (Integer.valueOf(404).equals(error.statusCode())
+            && "object_not_found".equals(error.code())) {
+            return error.getMessage() + "; 원본 database를 integration에 공유하세요";
+        }
+        return error.getMessage();
+    }
+
+    private List<String> append(List<String> values, String value) {
+        List<String> appended = new ArrayList<>(values);
+        appended.add(value);
+        return List.copyOf(appended);
     }
 
     private String documentText(String title, Map<String, String> properties, List<String> lines) {
@@ -323,6 +446,42 @@ public class NotionPageConnector implements DataSourceConnector {
         }
     }
 
-    private record PageContent(List<String> lines, List<String> childPageIds) {
+    private static final class TraversalState {
+        private final String principalKey;
+        private final ConnectorEventSink sink;
+        private final Set<String> visitedPageIds = new HashSet<>();
+        private final Set<String> visitedDatabaseIds = new HashSet<>();
+
+        private TraversalState(String principalKey, ConnectorEventSink sink) {
+            this.principalKey = principalKey;
+            this.sink = sink;
+        }
+    }
+
+    private record ResourceReference(String id, String title) {
+    }
+
+    private record DatabaseContext(
+        String id,
+        String title,
+        NotionApiClient.NotionDataSource dataSource
+    ) {
+    }
+
+    private record PageLocation(
+        String rootPageId,
+        String parentPageId,
+        String parentTitle,
+        List<String> parentPath,
+        DatabaseContext database
+    ) {
+    }
+
+    private record PageContent(
+        List<String> lines,
+        List<ResourceReference> childPages,
+        List<ResourceReference> childDatabases,
+        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks
+    ) {
     }
 }
