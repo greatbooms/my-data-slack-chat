@@ -31,7 +31,6 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -240,21 +239,18 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Override
-        public void queryDataSourcePages(
+        public Batch<NotionApiClient.NotionPage> queryDataSourcePages(
             String dataSourceId,
-            Consumer<List<NotionApiClient.NotionPage>> batchConsumer
+            String startCursor
         ) {
-            batchConsumer.accept(dataSourcePages.getOrDefault(dataSourceId, List.of()).stream()
+            return new Batch<>(dataSourcePages.getOrDefault(dataSourceId, List.of()).stream()
                 .map(pages::get)
-                .toList());
+                .toList(), null);
         }
 
         @Override
-        public void listBlockChildren(
-            String blockId,
-            Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
-        ) {
-            batchConsumer.accept(blockChildren.getOrDefault(blockId, List.of()));
+        public Batch<NotionApiClient.NotionBlock> listBlockChildren(String blockId, String startCursor) {
+            return new Batch<>(blockChildren.getOrDefault(blockId, List.of()), null);
         }
     }
 }

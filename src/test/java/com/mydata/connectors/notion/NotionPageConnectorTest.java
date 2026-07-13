@@ -22,12 +22,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class NotionPageConnectorTest {
+    private static final int DEEP_CHAIN_LENGTH = 1_501;
+
     @Test
     void fetchChangesEmitsRootAndChildPagesWithAclAndPlainTextContent() {
         UUID workspaceId = UUID.randomUUID();
@@ -319,6 +320,7 @@ class NotionPageConnectorTest {
         assertThat(sink.documents)
             .extracting(event -> event.document().externalId())
             .containsExactly("root", "child", "row-1");
+        assertThat(notion.retrievePageCalls("row-1")).isOne();
         assertThat(notion.retrieveDatabaseCalls("database-1")).isOne();
         assertThat(notion.queryCalls("data-source-1")).isOne();
         assertThat(sink.failures).isEmpty();
@@ -600,6 +602,77 @@ class NotionPageConnectorTest {
             .hasMessageContaining(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY);
     }
 
+    @Test
+    void fetchChangesTraversesMoreThanFifteenHundredChildPagesWithoutGrowingTheCallStack() {
+        FakeNotionClient notion = new FakeNotionClient();
+        for (int index = 0; index < DEEP_CHAIN_LENGTH; index++) {
+            String pageId = "page-" + index;
+            notion.page(
+                pageId,
+                "Page " + index,
+                "https://notion.so/" + pageId,
+                index == 0 ? "workspace" : "page_id",
+                index == 0 ? null : "page-" + (index - 1),
+                Map.of()
+            );
+            if (index + 1 < DEEP_CHAIN_LENGTH) {
+                notion.blocks(pageId, block(
+                    "page-" + (index + 1),
+                    "child_page",
+                    "Page " + (index + 1),
+                    false
+                ));
+            } else {
+                notion.blocks(pageId);
+            }
+        }
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "page-0");
+        CountingPageSink sink = new CountingPageSink();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), sink
+        );
+
+        assertThat(sink.count).isEqualTo(DEEP_CHAIN_LENGTH);
+    }
+
+    @Test
+    void fetchChangesCollectsMoreThanFifteenHundredNestedBlocksWithoutGrowingTheCallStack() {
+        FakeNotionClient notion = new FakeNotionClient();
+        notion.page("root", "Root", "https://notion.so/root", "workspace", null, Map.of());
+        notion.blocks("root", block("block-0", "paragraph", "Line 0", true));
+        for (int index = 0; index < DEEP_CHAIN_LENGTH; index++) {
+            if (index + 1 < DEEP_CHAIN_LENGTH) {
+                notion.blocks("block-" + index, block(
+                    "block-" + (index + 1),
+                    "paragraph",
+                    "Line " + (index + 1),
+                    true
+                ));
+            } else {
+                notion.blocks("block-" + index);
+            }
+        }
+        DataSourceEntity dataSource = dataSource(
+            UUID.randomUUID(), UUID.randomUUID(), DataSourceVisibility.PRIVATE
+        );
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        List<RawExternalDocument> documents = new ArrayList<>();
+
+        new NotionPageConnector(notion).fetchChanges(
+            snapshot(dataSource, new SyncCursor(Map.of())), documentSink(documents)
+        );
+
+        assertThat(documents).singleElement().satisfies(document -> {
+            assertThat(document.content().text().lines()).hasSize(DEEP_CHAIN_LENGTH + 1);
+            assertThat(document.content().text()).startsWith("Root\nLine 0\nLine 1");
+            assertThat(document.content().text()).endsWith("Line " + (DEEP_CHAIN_LENGTH - 1));
+        });
+    }
+
     private static DataSourceEntity dataSource(UUID workspaceId, UUID ownerId, DataSourceVisibility visibility) {
         DataSourceEntity dataSource = DataSourceEntity.create(
             workspaceId,
@@ -665,6 +738,21 @@ class NotionPageConnectorTest {
         @Override
         public void onFailure(ConnectorFailureEvent event) {
             failures.add(event);
+        }
+    }
+
+    private static final class CountingPageSink implements ConnectorEventSink {
+        private int count;
+
+        @Override
+        public void onDocument(ConnectorDocumentEvent event) {
+            assertThat(event.document().externalId()).isEqualTo("page-" + count);
+            count++;
+        }
+
+        @Override
+        public void onFailure(ConnectorFailureEvent event) {
+            throw new AssertionError("예상하지 않은 connector 실패 event: " + event);
         }
     }
 
@@ -781,30 +869,32 @@ class NotionPageConnectorTest {
         }
 
         @Override
-        public void queryDataSourcePages(
+        public Batch<NotionApiClient.NotionPage> queryDataSourcePages(
             String dataSourceId,
-            Consumer<List<NotionApiClient.NotionPage>> batchConsumer
+            String startCursor
         ) {
             queryCalls.merge(dataSourceId, 1, Integer::sum);
-            for (List<String> batch : dataSourcePageBatches.getOrDefault(dataSourceId, List.of())) {
-                batchConsumer.accept(batch.stream().map(pages::get).toList());
+            List<List<String>> batches = dataSourcePageBatches.getOrDefault(dataSourceId, List.of());
+            int batchIndex = startCursor == null ? 0 : Integer.parseInt(startCursor.substring("batch-".length()));
+            if (batchIndex >= batches.size()) {
+                NotionApiException failure = queryFailures.get(dataSourceId);
+                if (failure != null) {
+                    throw failure;
+                }
+                return new Batch<>(List.of(), null);
             }
-            NotionApiException failure = queryFailures.get(dataSourceId);
-            if (failure != null) {
-                throw failure;
-            }
+            List<NotionApiClient.NotionPage> items = batches.get(batchIndex).stream().map(pages::get).toList();
+            boolean hasNext = batchIndex + 1 < batches.size() || queryFailures.containsKey(dataSourceId);
+            return new Batch<>(items, hasNext ? "batch-" + (batchIndex + 1) : null);
         }
 
         @Override
-        public void listBlockChildren(
-            String blockId,
-            Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
-        ) {
+        public Batch<NotionApiClient.NotionBlock> listBlockChildren(String blockId, String startCursor) {
             NotionApiException failure = blockFailures.get(blockId);
             if (failure != null) {
                 throw failure;
             }
-            batchConsumer.accept(blockChildren.getOrDefault(blockId, List.of()));
+            return new Batch<>(blockChildren.getOrDefault(blockId, List.of()), null);
         }
     }
 }

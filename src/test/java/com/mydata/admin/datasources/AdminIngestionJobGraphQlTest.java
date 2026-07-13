@@ -10,6 +10,7 @@ import com.mydata.documents.ExternalDocumentRepository;
 import com.mydata.ingestion.IngestionJobEntity;
 import com.mydata.ingestion.IngestionJobItemEntity;
 import com.mydata.ingestion.IngestionJobItemRepository;
+import com.mydata.ingestion.IngestionJobItemStatus;
 import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.ingestion.IngestionTriggerType;
 import com.mydata.support.PostgresIntegrationTest;
@@ -145,6 +146,69 @@ class AdminIngestionJobGraphQlTest extends PostgresIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.ingestionJobItems.items.length()").value(1))
             .andExpect(jsonPath("$.data.ingestionJobItems.items[0].externalId").value("failure-second"))
+            .andExpect(jsonPath("$.data.ingestionJobItems.hasNextPage").value(false))
+            .andExpect(jsonPath("$.data.ingestionJobItems.endCursor").doesNotExist());
+    }
+
+    @Test
+    void paginatesSucceededAndFailedItemsTogetherWhenStatusIsOmitted() throws Exception {
+        Fixture fixture = fixture("mixed-status-pagination");
+        ExternalDocumentEntity document = document(fixture, "success-first");
+        OffsetDateTime processedAt = OffsetDateTime.parse("2026-07-13T02:03:04Z");
+        long idPrefix = fixture.job().getId().getMostSignificantBits();
+        insertItem(
+            new UUID(idPrefix, 1L),
+            fixture.job().getId(),
+            "success-first",
+            document.getId(),
+            IngestionJobItemStatus.SUCCEEDED,
+            null,
+            processedAt
+        );
+        insertItem(
+            new UUID(idPrefix, 2L),
+            fixture.job().getId(),
+            "failure-second",
+            null,
+            IngestionJobItemStatus.FAILED,
+            "두 번째 실패",
+            processedAt
+        );
+        MockHttpSession adminSession = loginAs(
+            "mixed-page-" + UUID.randomUUID() + "@example.com"
+        );
+
+        MvcResult firstPage = graphQl(adminSession, """
+            query {
+              ingestionJobItems(jobId: "%s", first: 1) {
+                items { externalId status }
+                hasNextPage
+                endCursor
+              }
+            }
+            """.formatted(fixture.job().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.ingestionJobItems.items.length()").value(1))
+            .andExpect(jsonPath("$.data.ingestionJobItems.items[0].externalId").value("success-first"))
+            .andExpect(jsonPath("$.data.ingestionJobItems.items[0].status").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.data.ingestionJobItems.hasNextPage").value(true))
+            .andExpect(jsonPath("$.data.ingestionJobItems.endCursor").isNotEmpty())
+            .andReturn();
+
+        String endCursor = JsonPaths.readString(firstPage, "$.data.ingestionJobItems.endCursor");
+        graphQl(adminSession, """
+            query {
+              ingestionJobItems(jobId: "%s", first: 1, after: "%s") {
+                items { externalId status }
+                hasNextPage
+                endCursor
+              }
+            }
+            """.formatted(fixture.job().getId(), endCursor))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.ingestionJobItems.items.length()").value(1))
+            .andExpect(jsonPath("$.data.ingestionJobItems.items[0].externalId").value("failure-second"))
+            .andExpect(jsonPath("$.data.ingestionJobItems.items[0].status").value("FAILED"))
             .andExpect(jsonPath("$.data.ingestionJobItems.hasNextPage").value(false))
             .andExpect(jsonPath("$.data.ingestionJobItems.endCursor").doesNotExist());
     }
@@ -303,6 +367,22 @@ class AdminIngestionJobGraphQlTest extends PostgresIntegrationTest {
             INSERT INTO ingestion_job_items (id, job_id, external_id, status, reason, processed_at)
             VALUES (?, ?, ?, 'FAILED', ?, ?)
             """, id, jobId, externalId, reason, processedAt);
+    }
+
+    private void insertItem(
+        UUID id,
+        UUID jobId,
+        String externalId,
+        UUID documentId,
+        IngestionJobItemStatus itemStatus,
+        String reason,
+        OffsetDateTime processedAt
+    ) {
+        jdbcTemplate.update("""
+            INSERT INTO ingestion_job_items
+                (id, job_id, external_id, document_id, status, reason, processed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, id, jobId, externalId, documentId, itemStatus.name(), reason, processedAt);
     }
 
     private void assertJobItemsNotFound(MockHttpSession adminSession, UUID jobId) throws Exception {

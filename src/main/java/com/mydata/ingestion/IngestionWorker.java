@@ -82,19 +82,17 @@ public class IngestionWorker {
             public void onDocument(ConnectorDocumentEvent event) {
                 try {
                     transactions.executeWithoutResult(status -> {
-                        UUID documentId = pipeline.ingest(
-                            source.workspaceId(), source.id(), event.document()
-                        );
-                        jobItems.save(IngestionJobItemEntity.succeeded(
+                        UUID documentId = persistDocument(source, event);
+                        jobItems.saveAndFlush(IngestionJobItemEntity.succeeded(
                             jobId, event.reference().qualifiedExternalId(), documentId
                         ));
                     });
-                } catch (RuntimeException persistenceFailure) {
+                } catch (DocumentPersistenceException persistenceFailure) {
                     log.warn(
                         "수집 문서 저장 실패: job={}, externalId={}",
                         jobId,
                         event.reference().qualifiedExternalId(),
-                        persistenceFailure
+                        persistenceFailure.getCause()
                     );
                     persistFailure(jobId, new ConnectorFailureEvent(
                         event.reference(),
@@ -110,6 +108,14 @@ public class IngestionWorker {
             }
         });
         finalizeJob(jobId, source.id(), nextCursor);
+    }
+
+    private UUID persistDocument(DataSourceSnapshot source, ConnectorDocumentEvent event) {
+        try {
+            return pipeline.ingest(source.workspaceId(), source.id(), event.document());
+        } catch (RuntimeException persistenceFailure) {
+            throw new DocumentPersistenceException(persistenceFailure);
+        }
     }
 
     private DataSourceSnapshot loadSnapshot(UUID jobId) {

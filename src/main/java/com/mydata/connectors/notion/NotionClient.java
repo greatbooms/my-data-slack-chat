@@ -1,20 +1,20 @@
 package com.mydata.connectors.notion;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 public interface NotionClient {
     NotionApiClient.NotionPage retrievePage(String pageId);
 
     NotionApiClient.NotionDatabase retrieveDatabase(String databaseId);
 
-    void queryDataSourcePages(
-        String dataSourceId,
-        Consumer<List<NotionApiClient.NotionPage>> batchConsumer
-    );
+    Batch<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId, String startCursor);
 
-    void listBlockChildren(
-        String blockId,
-        Consumer<List<NotionApiClient.NotionBlock>> batchConsumer
-    );
+    Batch<NotionApiClient.NotionBlock> listBlockChildren(String blockId, String startCursor);
+
+    record Batch<T>(List<T> items, String nextCursor) {
+        public Batch {
+            items = items == null ? List.of() : List.copyOf(items);
+            nextCursor = nextCursor == null || nextCursor.isBlank() ? null : nextCursor;
+        }
+    }
 }

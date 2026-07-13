@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AdminSchemaMigrationTest extends PostgresIntegrationTest {
@@ -62,6 +64,32 @@ class AdminSchemaMigrationTest extends PostgresIntegrationTest {
             """, Integer.class);
 
         assertThat(ownerForeignKeys).isEqualTo(1);
+    }
+
+    @Test
+    void createsIngestionJobItemKeysetPagingIndexes() {
+        Map<String, String> indexes = jdbcTemplate.query("""
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = 'ingestion_job_items'
+            """, resultSet -> {
+            Map<String, String> definitions = new java.util.LinkedHashMap<>();
+            while (resultSet.next()) {
+                definitions.put(resultSet.getString("indexname"), resultSet.getString("indexdef"));
+            }
+            return definitions;
+        });
+
+        assertThat(indexes)
+            .containsKeys(
+                "idx_ingestion_job_items_job_status_processed_id",
+                "idx_ingestion_job_items_job_processed_id"
+            );
+        assertThat(indexes.get("idx_ingestion_job_items_job_status_processed_id"))
+            .contains("(job_id, status, processed_at, id)");
+        assertThat(indexes.get("idx_ingestion_job_items_job_processed_id"))
+            .contains("(job_id, processed_at, id)");
     }
 
     private ColumnContract column(String tableName, String columnName) {

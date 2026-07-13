@@ -123,7 +123,7 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void succeededItemPersistenceFailureRollsBackDocumentAndContinuesWithThird() {
+    void succeededItemPersistenceFailureRollsBackDocumentAbortsConnectorAndMarksJobFailed() {
         Fixture fixture = fixture("item-save-failure", Map.of("cursor", "before"));
         connector.events(
             documentEvent("first", readableDocument("first")),
@@ -136,20 +136,26 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(documents.findByDataSourceIdAndExternalId(fixture.dataSource().getId(), "first")).isPresent();
         assertThat(documents.findByDataSourceIdAndExternalId(fixture.dataSource().getId(), "second")).isEmpty();
-        assertThat(documents.findByDataSourceIdAndExternalId(fixture.dataSource().getId(), "third")).isPresent();
+        assertThat(documents.findByDataSourceIdAndExternalId(fixture.dataSource().getId(), "third")).isEmpty();
         assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(fixture.job().getId()))
-            .hasSize(3)
-            .filteredOn(item -> item.getStatus() == IngestionJobItemStatus.FAILED)
+            .hasSize(1)
             .singleElement()
             .satisfies(item -> {
-                assertThat(item.getExternalId()).isEqualTo("data-source:second");
-                assertThat(item.getDocumentId()).isNull();
-                assertThat(item.getReason())
-                    .isEqualTo("[DATA_SOURCE] second (PERSIST): 문서 저장에 실패했습니다")
-                    .doesNotContain("job item infrastructure failure");
+                assertThat(item.getExternalId()).isEqualTo("data-source:first");
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getDocumentId()).isNotNull();
+                assertThat(item.getReason()).isNull();
             });
-        assertThat(ingestionJobs.findById(fixture.job().getId()).orElseThrow().getStatus())
-            .isEqualTo(IngestionJobStatus.PARTIAL_FAILED);
+        assertThat(ingestionJobs.findById(fixture.job().getId()).orElseThrow())
+            .satisfies(job -> {
+                assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
+                assertThat(job.getErrorMessage()).isEqualTo("job item infrastructure failure");
+            });
+        assertThat(dataSources.findById(fixture.dataSource().getId()).orElseThrow())
+            .satisfies(source -> {
+                assertThat(source.syncCursorValue()).containsEntry("cursor", "before");
+                assertThat(source.getLastSyncedAt()).isNull();
+            });
     }
 
     @Test
@@ -357,7 +363,7 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
                 new Class<?>[] {IngestionJobItemRepository.class},
                 (proxy, method, arguments) -> {
                     if (
-                        "save".equals(method.getName())
+                        ("save".equals(method.getName()) || "saveAndFlush".equals(method.getName()))
                             && arguments != null
                             && arguments.length == 1
                             && arguments[0] instanceof IngestionJobItemEntity item

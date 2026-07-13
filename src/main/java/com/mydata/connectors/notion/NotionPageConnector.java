@@ -18,7 +18,9 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -52,23 +54,23 @@ public class NotionPageConnector implements DataSourceConnector {
             throw new IllegalArgumentException("NOTION 설정은 notionRootPageId 또는 notionDatabaseId 중 하나만 사용할 수 있습니다");
         }
         TraversalState state = new TraversalState(dataSource.visibilityPrincipalKey(), sink);
+        Deque<TraversalWork> work = new ArrayDeque<>();
         if (databaseId != null) {
-            fetchDatabase(
+            work.addFirst(new DatabaseWork(
                 new ResourceReference(databaseId, databaseId),
                 List.of(),
-                new PageLocation(null, null, null, List.of(), null),
-                state
-            );
+                new PageLocation(null, null, null, List.of(), null)
+            ));
+            traverse(work, state);
             return dataSource.cursor();
         }
 
         rootPageId = requiredConfig(dataSource, ROOT_PAGE_ID_CONFIG_KEY);
-        fetchPage(
+        work.addFirst(new PageWork(
             new ResourceReference(rootPageId, rootPageId),
-            null,
-            new PageLocation(rootPageId, null, null, List.of(), null),
-            state
-        );
+            new PageLocation(rootPageId, null, null, List.of(), null)
+        ));
+        traverse(work, state);
         return dataSource.cursor();
     }
 
@@ -79,12 +81,24 @@ public class NotionPageConnector implements DataSourceConnector {
         return database.dataSources().getFirst();
     }
 
-    private void fetchPage(
-        ResourceReference reference,
-        NotionApiClient.NotionPage pageSnapshot,
-        PageLocation location,
-        TraversalState state
-    ) {
+    private void traverse(Deque<TraversalWork> work, TraversalState state) {
+        while (!work.isEmpty()) {
+            TraversalWork next = work.removeFirst();
+            if (next instanceof PageWork page) {
+                processPage(page, work, state);
+            } else if (next instanceof DatabaseWork database) {
+                processDatabase(database, work, state);
+            } else if (next instanceof DatabaseBatchWork batch) {
+                processDatabaseBatch(batch, work, state);
+            } else {
+                throw new IllegalStateException("지원하지 않는 Notion 순회 작업입니다: " + next.getClass());
+            }
+        }
+    }
+
+    private void processPage(PageWork workItem, Deque<TraversalWork> work, TraversalState state) {
+        ResourceReference reference = workItem.reference();
+        PageLocation location = workItem.location();
         if (!state.visitedPageIds.add(reference.id())) {
             return;
         }
@@ -94,7 +108,7 @@ public class NotionPageConnector implements DataSourceConnector {
         );
         NotionApiClient.NotionPage page;
         try {
-            page = pageSnapshot == null ? notionClient.retrievePage(reference.id()) : pageSnapshot;
+            page = notionClient.retrievePage(reference.id());
         } catch (NotionApiException retrieveFailure) {
             state.sink.onFailure(failure(
                 ConnectorItemType.PAGE,
@@ -172,20 +186,22 @@ public class NotionPageConnector implements DataSourceConnector {
         PageLocation childLocation = new PageLocation(
             location.rootPageId(), page.id(), title, path, location.database()
         );
-        for (ResourceReference childPage : pageContent.childPages()) {
-            fetchPage(childPage, null, childLocation, state);
+        for (int index = pageContent.childDatabases().size() - 1; index >= 0; index--) {
+            work.addFirst(new DatabaseWork(pageContent.childDatabases().get(index), path, childLocation));
         }
-        for (ResourceReference childDatabase : pageContent.childDatabases()) {
-            fetchDatabase(childDatabase, path, childLocation, state);
+        for (int index = pageContent.childPages().size() - 1; index >= 0; index--) {
+            work.addFirst(new PageWork(pageContent.childPages().get(index), childLocation));
         }
     }
 
-    private void fetchDatabase(
-        ResourceReference reference,
-        List<String> parentPath,
-        PageLocation parent,
+    private void processDatabase(
+        DatabaseWork workItem,
+        Deque<TraversalWork> work,
         TraversalState state
     ) {
+        ResourceReference reference = workItem.reference();
+        List<String> parentPath = workItem.parentPath();
+        PageLocation parent = workItem.parent();
         if (!state.visitedDatabaseIds.add(reference.id())) {
             return;
         }
@@ -229,29 +245,55 @@ public class NotionPageConnector implements DataSourceConnector {
             rowParentTitle = databaseTitle;
         }
         String finalRowParentTitle = rowParentTitle;
+        PageLocation rowLocation = new PageLocation(
+            parent.rootPageId(),
+            parent.parentPageId(),
+            finalRowParentTitle,
+            databasePath,
+            context
+        );
+        work.addFirst(new DatabaseBatchWork(
+            reference,
+            databasePath,
+            rowLocation,
+            dataSource.id(),
+            null
+        ));
+    }
+
+    private void processDatabaseBatch(
+        DatabaseBatchWork workItem,
+        Deque<TraversalWork> work,
+        TraversalState state
+    ) {
+        NotionClient.Batch<NotionApiClient.NotionPage> batch;
         try {
-            notionClient.queryDataSourcePages(dataSource.id(), pages -> pages.forEach(page ->
-                fetchPage(
-                    new ResourceReference(page.id(), page.title()),
-                    page,
-                    new PageLocation(
-                        parent.rootPageId(),
-                        parent.parentPageId(),
-                        finalRowParentTitle,
-                        databasePath,
-                        context
-                    ),
-                    state
-                )
-            ));
+            batch = notionClient.queryDataSourcePages(workItem.dataSourceId(), workItem.cursor());
         } catch (NotionApiException queryFailure) {
             state.sink.onFailure(failure(
                 ConnectorItemType.DATABASE,
-                reference.id(),
-                databasePath,
+                workItem.database().id(),
+                workItem.databasePath(),
                 ConnectorFailureStage.QUERY,
                 databaseReason(queryFailure)
             ));
+            return;
+        }
+
+        List<ResourceReference> rows = batch.items().stream()
+            .map(page -> new ResourceReference(page.id(), page.title()))
+            .toList();
+        if (batch.nextCursor() != null) {
+            work.addFirst(new DatabaseBatchWork(
+                workItem.database(),
+                workItem.databasePath(),
+                workItem.rowLocation(),
+                workItem.dataSourceId(),
+                batch.nextCursor()
+            ));
+        }
+        for (int index = rows.size() - 1; index >= 0; index--) {
+            work.addFirst(new PageWork(rows.get(index), workItem.rowLocation()));
         }
     }
 
@@ -297,46 +339,27 @@ public class NotionPageConnector implements DataSourceConnector {
         List<ResourceReference> childPages = new ArrayList<>();
         List<ResourceReference> childDatabases = new ArrayList<>();
         List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks = new ArrayList<>();
-        collectBlockChildren(
-            pageId,
-            lines,
-            childPages,
-            childDatabases,
-            unsupportedDatabaseBlocks,
-            new HashSet<>()
-        );
-        return new PageContent(lines, childPages, childDatabases, unsupportedDatabaseBlocks);
-    }
-
-    private void collectBlockChildren(
-        String blockId,
-        List<String> lines,
-        List<ResourceReference> childPages,
-        List<ResourceReference> childDatabases,
-        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks,
-        Set<String> visitedBlockIds
-    ) {
-        notionClient.listBlockChildren(blockId, blocks ->
-            collectBlocks(
-                blocks,
-                lines,
-                childPages,
-                childDatabases,
-                unsupportedDatabaseBlocks,
-                visitedBlockIds
-            )
-        );
-    }
-
-    private void collectBlocks(
-        List<NotionApiClient.NotionBlock> blocks,
-        List<String> lines,
-        List<ResourceReference> childPages,
-        List<ResourceReference> childDatabases,
-        List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks,
-        Set<String> visitedBlockIds
-    ) {
-        for (NotionApiClient.NotionBlock block : blocks) {
+        Set<String> visitedBlockIds = new HashSet<>();
+        Deque<BlockWork> work = new ArrayDeque<>();
+        work.addFirst(new BlockBatchWork(pageId, null));
+        while (!work.isEmpty()) {
+            BlockWork next = work.removeFirst();
+            if (next instanceof BlockBatchWork blockBatch) {
+                NotionClient.Batch<NotionApiClient.NotionBlock> batch = notionClient.listBlockChildren(
+                    blockBatch.blockId(), blockBatch.cursor()
+                );
+                if (batch.nextCursor() != null) {
+                    work.addFirst(new BlockBatchWork(blockBatch.blockId(), batch.nextCursor()));
+                }
+                for (int index = batch.items().size() - 1; index >= 0; index--) {
+                    work.addFirst(new BlockItemWork(batch.items().get(index)));
+                }
+                continue;
+            }
+            if (!(next instanceof BlockItemWork blockItem)) {
+                throw new IllegalStateException("지원하지 않는 Notion block 순회 작업입니다: " + next.getClass());
+            }
+            NotionApiClient.NotionBlock block = blockItem.block();
             if (!visitedBlockIds.add(block.id())) {
                 continue;
             }
@@ -361,16 +384,10 @@ public class NotionPageConnector implements DataSourceConnector {
                 continue;
             }
             if (block.hasChildren()) {
-                collectBlockChildren(
-                    block.id(),
-                    lines,
-                    childPages,
-                    childDatabases,
-                    unsupportedDatabaseBlocks,
-                    visitedBlockIds
-                );
+                work.addFirst(new BlockBatchWork(block.id(), null));
             }
         }
+        return new PageContent(lines, childPages, childDatabases, unsupportedDatabaseBlocks);
     }
 
     private ConnectorFailureEvent failure(
@@ -483,5 +500,36 @@ public class NotionPageConnector implements DataSourceConnector {
         List<ResourceReference> childDatabases,
         List<NotionApiClient.NotionBlock> unsupportedDatabaseBlocks
     ) {
+    }
+
+    private interface TraversalWork {
+    }
+
+    private record PageWork(ResourceReference reference, PageLocation location) implements TraversalWork {
+    }
+
+    private record DatabaseWork(
+        ResourceReference reference,
+        List<String> parentPath,
+        PageLocation parent
+    ) implements TraversalWork {
+    }
+
+    private record DatabaseBatchWork(
+        ResourceReference database,
+        List<String> databasePath,
+        PageLocation rowLocation,
+        String dataSourceId,
+        String cursor
+    ) implements TraversalWork {
+    }
+
+    private interface BlockWork {
+    }
+
+    private record BlockBatchWork(String blockId, String cursor) implements BlockWork {
+    }
+
+    private record BlockItemWork(NotionApiClient.NotionBlock block) implements BlockWork {
     }
 }

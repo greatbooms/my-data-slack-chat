@@ -18,7 +18,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 public class NotionApiClient implements NotionClient {
     private static final int PAGE_SIZE = 100;
@@ -87,44 +86,38 @@ public class NotionApiClient implements NotionClient {
     }
 
     @Override
-    public void queryDataSourcePages(String dataSourceId, Consumer<List<NotionPage>> batchConsumer) {
-        String nextCursor = null;
-        do {
-            JsonNode root = postJson(
-                "/v1/data_sources/" + pathSegment(dataSourceId) + "/query",
-                queryDataSourceRequestBody(nextCursor)
-            );
-            rejectIncompleteQuery(root);
-            List<NotionPage> batch = new ArrayList<>();
-            for (JsonNode result : root.path("results")) {
-                if ("page".equals(result.path("object").asString())) {
-                    batch.add(toPage(result));
-                }
+    public Batch<NotionPage> queryDataSourcePages(String dataSourceId, String startCursor) {
+        JsonNode root = postJson(
+            "/v1/data_sources/" + pathSegment(dataSourceId) + "/query",
+            queryDataSourceRequestBody(startCursor)
+        );
+        rejectIncompleteQuery(root);
+        List<NotionPage> batch = new ArrayList<>();
+        for (JsonNode result : root.path("results")) {
+            if ("page".equals(result.path("object").asString())) {
+                batch.add(toPage(result));
             }
-            batchConsumer.accept(List.copyOf(batch));
-            nextCursor = root.path("has_more").asBoolean(false)
-                ? blankToNull(root.path("next_cursor").asString(null))
-                : null;
-        } while (nextCursor != null);
+        }
+        return new Batch<>(batch, nextCursor(root));
     }
 
     @Override
-    public void listBlockChildren(String blockId, Consumer<List<NotionBlock>> batchConsumer) {
-        String nextCursor = null;
-        do {
-            String path = "/v1/blocks/" + pathSegment(blockId) + "/children?page_size=" + PAGE_SIZE;
-            if (nextCursor != null) {
-                path += "&start_cursor=" + queryParam(nextCursor);
-            }
+    public Batch<NotionBlock> listBlockChildren(String blockId, String startCursor) {
+        String path = "/v1/blocks/" + pathSegment(blockId) + "/children?page_size=" + PAGE_SIZE;
+        if (startCursor != null) {
+            path += "&start_cursor=" + queryParam(startCursor);
+        }
 
-            JsonNode root = getJson(path);
-            List<NotionBlock> batch = new ArrayList<>();
-            root.path("results").forEach(block -> batch.add(toBlock(block)));
-            batchConsumer.accept(List.copyOf(batch));
-            nextCursor = root.path("has_more").asBoolean(false)
-                ? blankToNull(root.path("next_cursor").asString(null))
-                : null;
-        } while (nextCursor != null);
+        JsonNode root = getJson(path);
+        List<NotionBlock> batch = new ArrayList<>();
+        root.path("results").forEach(block -> batch.add(toBlock(block)));
+        return new Batch<>(batch, nextCursor(root));
+    }
+
+    private String nextCursor(JsonNode root) {
+        return root.path("has_more").asBoolean(false)
+            ? blankToNull(root.path("next_cursor").asString(null))
+            : null;
     }
 
     private JsonNode getJson(String pathAndQuery) {
