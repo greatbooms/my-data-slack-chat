@@ -1,6 +1,8 @@
 package com.mydata.datasources;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +14,10 @@ public interface DataSourceRepository extends JpaRepository<DataSourceEntity, UU
     List<DataSourceEntity> findByWorkspaceId(UUID workspaceId);
 
     Optional<DataSourceEntity> findByIdAndDeletedAtIsNull(UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT dataSource FROM DataSourceEntity dataSource WHERE dataSource.id = :id")
+    Optional<DataSourceEntity> findByIdForUpdate(@Param("id") UUID id);
 
     List<DataSourceEntity> findByDeletedAtIsNullOrderByCreatedAtDesc();
 

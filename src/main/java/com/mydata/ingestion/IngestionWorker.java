@@ -74,9 +74,17 @@ public class IngestionWorker {
     }
 
     private boolean claimPendingJob(UUID jobId) {
-        return Boolean.TRUE.equals(transactions.execute(status ->
-            ingestionJobs.markPendingJobRunning(jobId) == 1
-        ));
+        return Boolean.TRUE.equals(transactions.execute(status -> {
+            IngestionJobEntity job = loadJob(jobId);
+            if (job.getStatus() != IngestionJobStatus.PENDING) {
+                return false;
+            }
+            dataSources.findByIdForUpdate(job.getDataSourceId())
+                .orElseThrow(() -> new IllegalStateException(
+                    "데이터소스를 찾을 수 없습니다: " + job.getDataSourceId()
+                ));
+            return ingestionJobs.markPendingJobRunningIfDataSourceIdle(jobId) == 1;
+        }));
     }
 
     private void ingestAndFinalize(UUID jobId) {

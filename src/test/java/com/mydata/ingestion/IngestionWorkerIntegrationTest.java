@@ -39,7 +39,13 @@ import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -389,6 +395,39 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void sameDataSourceJobsRunSerially() throws Exception {
+        Fixture fixture = fixture("serialized", Map.of("cursor", "before"));
+        IngestionJobEntity secondJob = pendingJob(fixture);
+        connector.events(documentEvent("first", readableDocument("first")));
+        connector.blockNextFetch();
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<?> firstRun = executor.submit(() -> worker.run(fixture.job().getId()));
+            assertThat(connector.awaitBlockedFetch()).isTrue();
+            try {
+                Future<?> competingRun = executor.submit(() -> worker.run(secondJob.getId()));
+                competingRun.get(5, TimeUnit.SECONDS);
+
+                assertThat(ingestionJobs.findById(fixture.job().getId()).orElseThrow().getStatus())
+                    .isEqualTo(IngestionJobStatus.RUNNING);
+                assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
+                    .isEqualTo(IngestionJobStatus.PENDING);
+                assertThat(connector.fetchCount()).isEqualTo(1);
+            } finally {
+                connector.releaseBlockedFetch();
+            }
+            firstRun.get(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(ingestionJobs.findById(fixture.job().getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        worker.run(secondJob.getId());
+        assertThat(ingestionJobs.findById(secondJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(connector.fetchCount()).isEqualTo(2);
+    }
+
+    @Test
     void topLevelConnectorFailureMarksJobFailed() {
         Fixture fixture = fixture("connector-failure", Map.of("cursor", "before"));
         connector.throwOnFetch(new IllegalStateException("커넥터 호출 실패"));
@@ -535,19 +574,25 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
         private List<ConnectorDocumentEvent> documentEvents = List.of();
         private List<ConnectorFailureEvent> failureEvents = List.of();
         private boolean transactionActiveDuringFetch;
-        private int fetchCount;
+        private final AtomicInteger fetchCount = new AtomicInteger();
         private RuntimeException fetchFailure;
         private RuntimeException failureAfterDocuments;
         private ConnectorReconciliationMode reconciliationMode = ConnectorReconciliationMode.NONE;
+        private final AtomicBoolean blockNextFetch = new AtomicBoolean();
+        private volatile CountDownLatch blockedFetchStarted = new CountDownLatch(0);
+        private volatile CountDownLatch blockedFetchRelease = new CountDownLatch(0);
 
         void reset() {
             documentEvents = List.of();
             failureEvents = List.of();
             transactionActiveDuringFetch = false;
-            fetchCount = 0;
+            fetchCount.set(0);
             fetchFailure = null;
             failureAfterDocuments = null;
             reconciliationMode = ConnectorReconciliationMode.NONE;
+            blockNextFetch.set(false);
+            blockedFetchStarted = new CountDownLatch(0);
+            blockedFetchRelease = new CountDownLatch(0);
         }
 
         void events(ConnectorDocumentEvent... values) {
@@ -570,12 +615,26 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
             reconciliationMode = ConnectorReconciliationMode.FULL_SNAPSHOT;
         }
 
+        void blockNextFetch() {
+            blockedFetchStarted = new CountDownLatch(1);
+            blockedFetchRelease = new CountDownLatch(1);
+            blockNextFetch.set(true);
+        }
+
+        boolean awaitBlockedFetch() throws InterruptedException {
+            return blockedFetchStarted.await(5, TimeUnit.SECONDS);
+        }
+
+        void releaseBlockedFetch() {
+            blockedFetchRelease.countDown();
+        }
+
         boolean transactionActiveDuringFetch() {
             return transactionActiveDuringFetch;
         }
 
         int fetchCount() {
-            return fetchCount;
+            return fetchCount.get();
         }
 
         @Override
@@ -590,8 +649,19 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
 
         @Override
         public SyncCursor fetchChanges(DataSourceSnapshot source, ConnectorEventSink sink) {
-            fetchCount++;
+            fetchCount.incrementAndGet();
             transactionActiveDuringFetch = TransactionSynchronizationManager.isActualTransactionActive();
+            if (blockNextFetch.compareAndSet(true, false)) {
+                blockedFetchStarted.countDown();
+                try {
+                    if (!blockedFetchRelease.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("blocked fetch release timeout");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("blocked fetch interrupted", exception);
+                }
+            }
             if (fetchFailure != null) {
                 throw fetchFailure;
             }

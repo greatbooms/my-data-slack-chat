@@ -15,13 +15,19 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-        UPDATE ingestion_jobs
+        UPDATE ingestion_jobs target
         SET status = 'RUNNING',
             started_at = now(),
             finished_at = NULL,
             error_message = NULL
-        WHERE id = :id
-          AND status = 'PENDING'
+        WHERE target.id = :id
+          AND target.status = 'PENDING'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM ingestion_jobs running
+              WHERE running.data_source_id = target.data_source_id
+                AND running.status = 'RUNNING'
+          )
         """, nativeQuery = true)
-    int markPendingJobRunning(@Param("id") UUID id);
+    int markPendingJobRunningIfDataSourceIdle(@Param("id") UUID id);
 }
