@@ -356,9 +356,10 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
 
         connector.events();
         IngestionJobEntity failedJob = pendingJob(fixture);
-        snapshotSweepFault.failNextSweep();
+        snapshotSweepFault.failAfterNextSweep();
         worker.run(failedJob.getId());
 
+        assertThat(snapshotSweepFault.affectedDocumentCount()).isEqualTo(1);
         assertThat(ingestionJobs.findById(failedJob.getId()).orElseThrow())
             .satisfies(job -> {
                 assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
@@ -638,14 +639,15 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
                 ExternalDocumentRepository.class.getClassLoader(),
                 new Class<?>[] {ExternalDocumentRepository.class},
                 (proxy, method, arguments) -> {
-                    if (
-                        "softDeleteUnseenForSucceededFullSnapshot".equals(method.getName())
-                            && fault.shouldFail()
-                    ) {
-                        throw new IllegalStateException("snapshot sweep infrastructure failure");
-                    }
                     try {
-                        return method.invoke(delegate, arguments);
+                        Object result = method.invoke(delegate, arguments);
+                        if (
+                            "softDeleteUnseenForSucceededFullSnapshot".equals(method.getName())
+                                && fault.shouldFailAfterSweep((Integer) result)
+                        ) {
+                            throw new IllegalStateException("snapshot sweep infrastructure failure");
+                        }
+                        return result;
                     } catch (InvocationTargetException exception) {
                         throw exception.getCause();
                     }
@@ -676,18 +678,28 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     static final class SnapshotSweepFault {
-        private final AtomicBoolean failNextSweep = new AtomicBoolean();
+        private final AtomicBoolean failAfterNextSweep = new AtomicBoolean();
+        private final AtomicInteger affectedDocumentCount = new AtomicInteger(-1);
 
         void reset() {
-            failNextSweep.set(false);
+            failAfterNextSweep.set(false);
+            affectedDocumentCount.set(-1);
         }
 
-        void failNextSweep() {
-            failNextSweep.set(true);
+        void failAfterNextSweep() {
+            failAfterNextSweep.set(true);
         }
 
-        boolean shouldFail() {
-            return failNextSweep.compareAndSet(true, false);
+        boolean shouldFailAfterSweep(int affectedDocuments) {
+            if (!failAfterNextSweep.compareAndSet(true, false)) {
+                return false;
+            }
+            affectedDocumentCount.set(affectedDocuments);
+            return true;
+        }
+
+        int affectedDocumentCount() {
+            return affectedDocumentCount.get();
         }
     }
 
