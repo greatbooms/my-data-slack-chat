@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -103,6 +104,53 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void workerSoftDeletesAndRestoresNotionPageAcrossSuccessfulSnapshots() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create(
+            "notion-reconcile-" + suffix + "@example.com", "Notion Reconcile Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(
+            owner.getId(), "Notion reconcile workspace"
+        ));
+        DataSourceEntity dataSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.NOTION,
+            "Notion reconcile",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        dataSource.assignOwner(owner.getId());
+        dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
+        dataSource = dataSources.saveAndFlush(dataSource);
+        notion.page("root", "Root", "https://notion.so/root");
+        notion.page("child", "Child", "https://notion.so/child");
+        notion.blocks("root", childPage("child", "Child"));
+        notion.blocks("child");
+
+        worker.run(pendingJob(workspace, dataSource, owner).getId());
+        UUID childDocumentId = documents.findByDataSourceIdAndExternalId(
+            dataSource.getId(), "child"
+        ).orElseThrow().getId();
+
+        notion.blocks("root");
+        IngestionJobEntity removalJob = pendingJob(workspace, dataSource, owner);
+        worker.run(removalJob.getId());
+        assertThat(documents.findById(childDocumentId).orElseThrow().getDeletedAt()).isNotNull();
+
+        notion.blocks("root", childPage("child", "Child"));
+        IngestionJobEntity restorationJob = pendingJob(workspace, dataSource, owner);
+        worker.run(restorationJob.getId());
+
+        ExternalDocumentEntity restored = documents
+            .findByDataSourceIdAndExternalId(dataSource.getId(), "child")
+            .orElseThrow();
+        assertThat(restored.getId()).isEqualTo(childDocumentId);
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(ingestionJobs.findById(restorationJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
     void workerKeepsNestedDatabaseRowsWhenSiblingDatabaseFails() {
         UserEntity user = users.save(UserEntity.create(
             "notion-partial-failure-owner@example.com", "Notion Partial Owner"
@@ -120,6 +168,14 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         dataSource.assignOwner(user.getId());
         dataSource.putConfig(NotionPageConnector.ROOT_PAGE_ID_CONFIG_KEY, "root");
         dataSource = dataSources.saveAndFlush(dataSource);
+        ExternalDocumentEntity previouslySeen = documents.saveAndFlush(ExternalDocumentEntity.create(
+            workspace.getId(),
+            dataSource.getId(),
+            "previously-seen",
+            DataSourceType.NOTION.name(),
+            "Previously seen",
+            "previously-seen-hash"
+        ));
         String principalKey = PrincipalKeys.user(user.getId());
         notion.page("root", "Root", "https://notion.so/root");
         notion.page("good-row", "Good row", "https://notion.so/good-row");
@@ -172,6 +228,21 @@ class NotionIngestionIntegrationTest extends PostgresIntegrationTest {
         assertThat(aclEntries.findByDocumentId(goodRow.getId()))
             .singleElement()
             .satisfies(acl -> assertThat(acl.getPrincipalKey()).isEqualTo(principalKey));
+        assertThat(documents.findById(previouslySeen.getId()).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    private IngestionJobEntity pendingJob(
+        WorkspaceEntity workspace,
+        DataSourceEntity dataSource,
+        UserEntity owner
+    ) {
+        return ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), dataSource.getId(), IngestionTriggerType.MANUAL, owner.getId()
+        ));
+    }
+
+    private NotionApiClient.NotionBlock childPage(String id, String title) {
+        return new NotionApiClient.NotionBlock(id, "child_page", title, false, null);
     }
 
     @TestConfiguration
