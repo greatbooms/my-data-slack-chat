@@ -14,6 +14,7 @@ import org.hibernate.annotations.ColumnTransformer;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,6 +57,9 @@ public class ExternalDocumentEntity extends BaseEntity {
 
     @Column(name = "external_updated_at")
     private Instant externalUpdatedAt;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     @ColumnTransformer(write = "?::jsonb")
     @Column(name = "metadata_json", nullable = false, columnDefinition = "jsonb")
@@ -136,6 +140,7 @@ public class ExternalDocumentEntity extends BaseEntity {
         this.externalUpdatedAt = externalUpdatedAt;
         this.contentHash = contentHash;
         this.metadataJson = metadataJson(metadata);
+        this.deletedAt = null;
     }
 
     private String metadataJson(Map<String, Object> metadata) {

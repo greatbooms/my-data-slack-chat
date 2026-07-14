@@ -6,6 +6,7 @@ import com.mydata.connectors.core.ConnectorEventSink;
 import com.mydata.connectors.core.ConnectorFailureEvent;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.ConnectorReconciliationMode;
 import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
@@ -26,6 +27,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SlackChannelConnectorTest {
+    @Test
+    void keepsReconciliationDisabledForIncrementalSync() {
+        SlackChannelConnector connector = new SlackChannelConnector(new FakeSlackClient());
+
+        assertThat(connector.reconciliationMode())
+            .isEqualTo(ConnectorReconciliationMode.NONE);
+    }
+
     @Test
     void fetchChangesEmitsChannelMessagesAndThreadReplies() {
         UUID workspaceId = UUID.randomUUID();

@@ -7,6 +7,7 @@ import com.mydata.connectors.core.ConnectorFailureEvent;
 import com.mydata.connectors.core.ConnectorFailureStage;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.ConnectorReconciliationMode;
 import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
@@ -28,6 +29,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class NotionPageConnectorTest {
     private static final int DEEP_CHAIN_LENGTH = 1_501;
+
+    @Test
+    void declaresFullSnapshotReconciliation() {
+        NotionPageConnector connector = new NotionPageConnector(new FakeNotionClient());
+
+        assertThat(connector.reconciliationMode())
+            .isEqualTo(ConnectorReconciliationMode.FULL_SNAPSHOT);
+    }
 
     @Test
     void fetchChangesEmitsRootAndChildPagesWithAclAndPlainTextContent() {

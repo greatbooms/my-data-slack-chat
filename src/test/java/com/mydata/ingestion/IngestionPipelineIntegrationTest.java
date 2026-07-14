@@ -452,6 +452,106 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             .isEmpty();
     }
 
+    @Test
+    void unchangedReingestionRestoresSoftDeletedDocumentWithSameId() {
+        RestoreFixture fixture = restoreFixture("Unchanged restore");
+        RawExternalDocument rawDocument = restoreDocument(
+            fixture, "unchanged-restore", "unchanged restored content", "restore-hash-1"
+        );
+        UUID originalDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
+        );
+        UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
+            .getFirst()
+            .getId();
+        jdbcTemplate.update(
+            "UPDATE external_documents SET deleted_at = now() WHERE id = ?",
+            originalDocumentId
+        );
+
+        UUID restoredDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
+        );
+
+        ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
+        assertThat(restored.getId()).isEqualTo(originalDocumentId);
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(chunks.findByDocumentIdOrderByChunkIndex(restored.getId()))
+            .singleElement()
+            .satisfies(chunk -> assertThat(chunk.getId()).isEqualTo(originalChunkId));
+    }
+
+    @Test
+    void changedReingestionRestoresSoftDeletedDocumentWithSameId() {
+        RestoreFixture fixture = restoreFixture("Changed restore");
+        UUID originalDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(),
+            fixture.dataSource().getId(),
+            restoreDocument(fixture, "changed-restore", "original content", "restore-hash-1")
+        );
+        UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
+            .getFirst()
+            .getId();
+        jdbcTemplate.update(
+            "UPDATE external_documents SET deleted_at = now() WHERE id = ?",
+            originalDocumentId
+        );
+
+        UUID restoredDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(),
+            fixture.dataSource().getId(),
+            restoreDocument(fixture, "changed-restore", "changed restored content", "restore-hash-2")
+        );
+
+        ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
+        assertThat(restored.getId()).isEqualTo(originalDocumentId);
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(chunks.findByDocumentIdOrderByChunkIndex(restored.getId()))
+            .singleElement()
+            .satisfies(chunk -> {
+                assertThat(chunk.getId()).isNotEqualTo(originalChunkId);
+                assertThat(chunk.getContent()).isEqualTo("changed restored content");
+            });
+    }
+
+    private RestoreFixture restoreFixture(String name) {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create(
+            "restore-" + suffix + "@example.com", "Restore Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), name));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(), DataSourceType.NOTION, name, DataSourceStatus.ACTIVE, SyncMode.MANUAL
+        ));
+        return new RestoreFixture(owner, dataSource);
+    }
+
+    private RawExternalDocument restoreDocument(
+        RestoreFixture fixture,
+        String externalId,
+        String content,
+        String contentHash
+    ) {
+        return new RawExternalDocument(
+            externalId,
+            DataSourceType.NOTION,
+            "Restore page",
+            "https://notion.so/" + externalId,
+            "text/plain",
+            null,
+            null,
+            contentHash,
+            Map.of(),
+            new RawContent(content, "text/plain"),
+            List.of(new RawAclEntry(
+                PrincipalKeys.user(fixture.owner().getId()), "READ", false, "NOTION"
+            ))
+        );
+    }
+
+    private record RestoreFixture(UserEntity owner, DataSourceEntity dataSource) {
+    }
+
     private RawExternalDocument rawLocalTextDocument(
         String externalId,
         String title,

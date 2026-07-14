@@ -6,6 +6,7 @@ import com.mydata.connectors.core.ConnectorFailureEvent;
 import com.mydata.connectors.core.ConnectorFailureStage;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.ConnectorReconciliationMode;
 import com.mydata.connectors.core.DataSourceConnector;
 import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
@@ -43,6 +44,11 @@ public class NotionPageConnector implements DataSourceConnector {
     @Override
     public DataSourceType supports() {
         return DataSourceType.NOTION;
+    }
+
+    @Override
+    public ConnectorReconciliationMode reconciliationMode() {
+        return ConnectorReconciliationMode.FULL_SNAPSHOT;
     }
 
     @Override
