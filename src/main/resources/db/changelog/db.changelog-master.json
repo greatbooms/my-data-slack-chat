@@ -29,6 +29,11 @@
       "include": {
         "file": "db/changelog/changes/006-ingestion-job-item-indexes.sql"
       }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/007-full-snapshot-reconciliation-indexes.sql"
+      }
     }
   ]
 }

@@ -68,18 +68,7 @@ class AdminSchemaMigrationTest extends PostgresIntegrationTest {
 
     @Test
     void createsIngestionJobItemKeysetPagingIndexes() {
-        Map<String, String> indexes = jdbcTemplate.query("""
-            SELECT indexname, indexdef
-            FROM pg_indexes
-            WHERE schemaname = 'public'
-              AND tablename = 'ingestion_job_items'
-            """, resultSet -> {
-            Map<String, String> definitions = new java.util.LinkedHashMap<>();
-            while (resultSet.next()) {
-                definitions.put(resultSet.getString("indexname"), resultSet.getString("indexdef"));
-            }
-            return definitions;
-        });
+        Map<String, String> indexes = indexes("ingestion_job_items");
 
         assertThat(indexes)
             .containsKeys(
@@ -90,6 +79,36 @@ class AdminSchemaMigrationTest extends PostgresIntegrationTest {
             .contains("(job_id, status, processed_at, id)");
         assertThat(indexes.get("idx_ingestion_job_items_job_processed_id"))
             .contains("(job_id, processed_at, id)");
+    }
+
+    @Test
+    void createsFullSnapshotReconciliationIndexes() {
+        Map<String, String> itemIndexes = indexes("ingestion_job_items");
+        Map<String, String> jobIndexes = indexes("ingestion_jobs");
+
+        assertThat(itemIndexes.get("idx_ingestion_job_items_job_succeeded_document"))
+            .contains("(job_id, document_id)")
+            .contains("status = 'SUCCEEDED'::text")
+            .contains("document_id IS NOT NULL");
+        assertThat(jobIndexes.get("uq_ingestion_jobs_running_data_source"))
+            .contains("CREATE UNIQUE INDEX")
+            .contains("(data_source_id)")
+            .contains("status = 'RUNNING'::text");
+    }
+
+    private Map<String, String> indexes(String tableName) {
+        return jdbcTemplate.query("""
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = ?
+            """, resultSet -> {
+            Map<String, String> definitions = new java.util.LinkedHashMap<>();
+            while (resultSet.next()) {
+                definitions.put(resultSet.getString("indexname"), resultSet.getString("indexdef"));
+            }
+            return definitions;
+        }, tableName);
     }
 
     private ColumnContract column(String tableName, String columnName) {

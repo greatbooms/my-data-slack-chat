@@ -26,7 +26,9 @@ class LiquibaseChangelogStructureTest {
             "\"file\": \"db/changelog/changes/002-unique-chat-session-external-thread.sql\"",
             "\"file\": \"db/changelog/changes/003-admin-console-schema.sql\"",
             "\"file\": \"db/changelog/changes/004-workspace-admin-schema.sql\"",
-            "\"file\": \"db/changelog/changes/005-cascade-chat-citations-on-chunk-delete.sql\""
+            "\"file\": \"db/changelog/changes/005-cascade-chat-citations-on-chunk-delete.sql\"",
+            "\"file\": \"db/changelog/changes/006-ingestion-job-item-indexes.sql\"",
+            "\"file\": \"db/changelog/changes/007-full-snapshot-reconciliation-indexes.sql\""
         );
 
         Matcher includedFiles = Pattern.compile("\"file\"\\s*:\\s*\"([^\"]+)\"").matcher(masterContent);
@@ -36,6 +38,15 @@ class LiquibaseChangelogStructureTest {
             assertThat(Files.exists(Path.of("src/main/resources").resolve(includedFiles.group(1)))).isTrue();
         }
 
-        assertThat(includeCount).isGreaterThan(0);
+        assertThat(includeCount).isEqualTo(7);
+
+        String reconciliationMigration = Files.readString(
+            changelogDirectory.resolve("changes/007-full-snapshot-reconciliation-indexes.sql")
+        );
+        assertThat(reconciliationMigration)
+            .contains("--preconditions onFail:HALT onError:HALT")
+            .contains("HAVING count(*) > 1")
+            .contains("idx_ingestion_job_items_job_succeeded_document")
+            .contains("uq_ingestion_jobs_running_data_source");
     }
 }
