@@ -6,6 +6,7 @@ import com.mydata.connectors.core.ConnectorFailureEvent;
 import com.mydata.connectors.core.ConnectorFailureStage;
 import com.mydata.connectors.core.ConnectorItemReference;
 import com.mydata.connectors.core.ConnectorItemType;
+import com.mydata.connectors.core.ConnectorReconciliationMode;
 import com.mydata.connectors.core.DataSourceConnector;
 import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
@@ -214,6 +215,125 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void successfulFullSnapshotSoftDeletesOnlyUnseenDocuments() {
+        Fixture fixture = fixture("full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(
+            documentEvent("seen", readableDocument("seen")),
+            documentEvent("missing", readableDocument("missing"))
+        );
+        worker.run(fixture.job().getId());
+        UUID seenId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "seen"
+        ).orElseThrow().getId();
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+
+        Fixture otherFixture = fixture("other-source", Map.of("cursor", "before"));
+        connector.events(documentEvent("other", readableDocument("other")));
+        worker.run(otherFixture.job().getId());
+        UUID otherId = documents.findByDataSourceIdAndExternalId(
+            otherFixture.dataSource().getId(), "other"
+        ).orElseThrow().getId();
+
+        connector.events(documentEvent("seen", readableDocument("seen")));
+        IngestionJobEntity nextJob = pendingJob(fixture);
+        worker.run(nextJob.getId());
+
+        assertThat(documents.findById(seenId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(documents.findById(otherId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(ingestionJobs.findById(nextJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
+    void emptySuccessfulFullSnapshotSoftDeletesAllSourceDocuments() {
+        Fixture fixture = fixture("empty-full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(documentEvent("missing", readableDocument("missing")));
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+
+        connector.events();
+        IngestionJobEntity emptyJob = pendingJob(fixture);
+        worker.run(emptyJob.getId());
+
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(ingestionJobs.findById(emptyJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+    }
+
+    @Test
+    void partialFailedFullSnapshotDoesNotSoftDeleteUnseenDocuments() {
+        Fixture fixture = fixture("partial-full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(
+            documentEvent("seen", readableDocument("seen")),
+            documentEvent("missing", readableDocument("missing"))
+        );
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+
+        connector.events(documentEvent("seen", readableDocument("seen")));
+        connector.failures(failureEvent("missing", "일시적으로 접근할 수 없습니다"));
+        IngestionJobEntity partialJob = pendingJob(fixture);
+        worker.run(partialJob.getId());
+
+        assertThat(ingestionJobs.findById(partialJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.PARTIAL_FAILED);
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void allFailedFullSnapshotDoesNotSoftDeleteUnseenDocuments() {
+        Fixture fixture = fixture("failed-full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(documentEvent("missing", readableDocument("missing")));
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+
+        connector.events();
+        connector.failures(failureEvent("root", "루트를 읽지 못했습니다"));
+        IngestionJobEntity failedJob = pendingJob(fixture);
+        worker.run(failedJob.getId());
+
+        assertThat(ingestionJobs.findById(failedJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.FAILED);
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void connectorFailureAfterDocumentDoesNotSoftDeleteUnseenDocuments() {
+        Fixture fixture = fixture("interrupted-full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(
+            documentEvent("seen", readableDocument("seen")),
+            documentEvent("missing", readableDocument("missing"))
+        );
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+
+        connector.events(documentEvent("seen", readableDocument("seen")));
+        connector.throwAfterDocuments(new IllegalStateException("source interrupted"));
+        IngestionJobEntity interruptedJob = pendingJob(fixture);
+        worker.run(interruptedJob.getId());
+
+        assertThat(ingestionJobs.findById(interruptedJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.FAILED);
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
     void allFailuresMarkFailedAndKeepCursorAndLastSyncedAt() {
         Fixture fixture = fixture("failed", Map.of("cursor", "before"));
         connector.failures(
@@ -307,6 +427,15 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
             workspace.getId(), source.getId(), IngestionTriggerType.MANUAL, owner.getId()
         ));
         return new Fixture(source, job);
+    }
+
+    private IngestionJobEntity pendingJob(Fixture fixture) {
+        return ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            fixture.dataSource().getWorkspaceId(),
+            fixture.dataSource().getId(),
+            IngestionTriggerType.MANUAL,
+            fixture.job().getRequestedByUserId()
+        ));
     }
 
     private ConnectorDocumentEvent documentEvent(String id, RawExternalDocument document) {
@@ -408,6 +537,8 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
         private boolean transactionActiveDuringFetch;
         private int fetchCount;
         private RuntimeException fetchFailure;
+        private RuntimeException failureAfterDocuments;
+        private ConnectorReconciliationMode reconciliationMode = ConnectorReconciliationMode.NONE;
 
         void reset() {
             documentEvents = List.of();
@@ -415,6 +546,8 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
             transactionActiveDuringFetch = false;
             fetchCount = 0;
             fetchFailure = null;
+            failureAfterDocuments = null;
+            reconciliationMode = ConnectorReconciliationMode.NONE;
         }
 
         void events(ConnectorDocumentEvent... values) {
@@ -427,6 +560,14 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
 
         void throwOnFetch(RuntimeException failure) {
             fetchFailure = failure;
+        }
+
+        void throwAfterDocuments(RuntimeException failure) {
+            failureAfterDocuments = failure;
+        }
+
+        void fullSnapshot() {
+            reconciliationMode = ConnectorReconciliationMode.FULL_SNAPSHOT;
         }
 
         boolean transactionActiveDuringFetch() {
@@ -443,6 +584,11 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Override
+        public ConnectorReconciliationMode reconciliationMode() {
+            return reconciliationMode;
+        }
+
+        @Override
         public SyncCursor fetchChanges(DataSourceSnapshot source, ConnectorEventSink sink) {
             fetchCount++;
             transactionActiveDuringFetch = TransactionSynchronizationManager.isActualTransactionActive();
@@ -450,6 +596,9 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
                 throw fetchFailure;
             }
             documentEvents.forEach(sink::onDocument);
+            if (failureAfterDocuments != null) {
+                throw failureAfterDocuments;
+            }
             failureEvents.forEach(sink::onFailure);
             return new SyncCursor(Map.of("cursor", "after"));
         }

@@ -4,12 +4,14 @@ import com.mydata.connectors.core.ConnectorDocumentEvent;
 import com.mydata.connectors.core.ConnectorEventSink;
 import com.mydata.connectors.core.ConnectorFailureEvent;
 import com.mydata.connectors.core.ConnectorFailureStage;
+import com.mydata.connectors.core.ConnectorReconciliationMode;
 import com.mydata.connectors.core.DataSourceConnector;
 import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.SyncCursor;
 import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceType;
+import com.mydata.documents.ExternalDocumentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class IngestionWorker {
     private final IngestionJobRepository ingestionJobs;
     private final IngestionJobItemRepository jobItems;
     private final DataSourceRepository dataSources;
+    private final ExternalDocumentRepository documents;
     private final IngestionPipelineService pipeline;
     private final Map<DataSourceType, DataSourceConnector> connectors;
     private final TransactionTemplate transactions;
@@ -37,6 +40,7 @@ public class IngestionWorker {
         IngestionJobRepository ingestionJobs,
         IngestionJobItemRepository jobItems,
         DataSourceRepository dataSources,
+        ExternalDocumentRepository documents,
         IngestionPipelineService pipeline,
         List<DataSourceConnector> connectors,
         TransactionTemplate transactions
@@ -44,6 +48,7 @@ public class IngestionWorker {
         this.ingestionJobs = ingestionJobs;
         this.jobItems = jobItems;
         this.dataSources = dataSources;
+        this.documents = documents;
         this.pipeline = pipeline;
         this.transactions = transactions;
         this.connectors = new EnumMap<>(DataSourceType.class);
@@ -107,7 +112,7 @@ public class IngestionWorker {
                 persistFailure(jobId, event);
             }
         });
-        finalizeJob(jobId, source.id(), nextCursor);
+        finalizeJob(jobId, source.id(), nextCursor, connector.reconciliationMode());
     }
 
     private UUID persistDocument(DataSourceSnapshot source, ConnectorDocumentEvent event) {
@@ -141,7 +146,12 @@ public class IngestionWorker {
         )));
     }
 
-    private void finalizeJob(UUID jobId, UUID dataSourceId, SyncCursor nextCursor) {
+    private void finalizeJob(
+        UUID jobId,
+        UUID dataSourceId,
+        SyncCursor nextCursor,
+        ConnectorReconciliationMode reconciliationMode
+    ) {
         transactions.executeWithoutResult(status -> {
             long succeeded = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.SUCCEEDED);
             long failed = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.FAILED);
@@ -149,11 +159,22 @@ public class IngestionWorker {
             if (failed == 0) {
                 DataSourceEntity dataSource = dataSources.findActiveById(dataSourceId)
                     .orElseThrow(() -> new IllegalStateException("데이터소스를 찾을 수 없습니다: " + dataSourceId));
+                job.markSucceeded();
+                ingestionJobs.flush();
+                if (reconciliationMode == ConnectorReconciliationMode.FULL_SNAPSHOT) {
+                    int softDeletedDocumentCount = documents
+                        .softDeleteUnseenForSucceededFullSnapshot(jobId);
+                    log.info(
+                        "전체 snapshot 문서 정리 완료: job={}, dataSource={}, softDeleted={}",
+                        jobId,
+                        dataSourceId,
+                        softDeletedDocumentCount
+                    );
+                }
                 if (nextCursor != null) {
                     dataSource.replaceSyncCursor(nextCursor.value());
                 }
                 dataSource.markSynced();
-                job.markSucceeded();
             } else if (succeeded > 0) {
                 job.markPartialFailed(succeeded + failed, failed);
             } else {
