@@ -116,6 +116,19 @@ class AdminGraphQlSecurityTest extends PostgresIntegrationTest {
             .andExpect(jsonPath("$.data.dashboardSummary.runningJobCount").value(initialRunningJobCount + 1));
     }
 
+    @Test
+    void rejectsIngestionJobItemsWithoutAdminSession() throws Exception {
+        mockMvc.perform(post("/admin/graphql")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "query": "query { ingestionJobItems(jobId: \"00000000-0000-0000-0000-000000000001\") { items { externalId } } }"
+                    }
+                    """))
+            .andExpect(status().isUnauthorized());
+    }
+
     private MockHttpSession loginAs(String email) throws Exception {
         MvcResult loginResult = mockMvc.perform(post("/admin/auth/login")
                 .with(csrf())

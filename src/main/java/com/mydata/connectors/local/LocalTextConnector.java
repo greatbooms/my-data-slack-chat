@@ -1,12 +1,15 @@
 package com.mydata.connectors.local;
 
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceConnector;
-import com.mydata.connectors.core.DocumentHandler;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawContent;
 import com.mydata.connectors.core.RawExternalDocument;
 import com.mydata.connectors.core.SyncCursor;
-import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceType;
 import org.springframework.stereotype.Component;
 
@@ -27,14 +30,14 @@ public class LocalTextConnector implements DataSourceConnector {
     }
 
     @Override
-    public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
+    public SyncCursor fetchChanges(DataSourceSnapshot dataSource, ConnectorEventSink sink) {
         String externalId = requiredConfig(dataSource, "externalId");
         String title = requiredConfig(dataSource, "title");
         String content = requiredConfig(dataSource, "content");
         String principalKey = requiredConfig(dataSource, "principalKey");
         String uri = optionalConfig(dataSource, "uri");
 
-        handler.handle(new RawExternalDocument(
+        RawExternalDocument document = new RawExternalDocument(
             externalId,
             DataSourceType.LOCAL_TEXT,
             title,
@@ -46,11 +49,15 @@ public class LocalTextConnector implements DataSourceConnector {
             Map.of(),
             new RawContent(content, MIME_TYPE),
             List.of(new RawAclEntry(principalKey, "READ", false, "MANUAL"))
+        );
+        sink.onDocument(new ConnectorDocumentEvent(
+            document,
+            new ConnectorItemReference(ConnectorItemType.DATA_SOURCE, externalId, title, List.of(title))
         ));
-        return cursor;
+        return dataSource.cursor();
     }
 
-    private String requiredConfig(DataSourceEntity dataSource, String key) {
+    private String requiredConfig(DataSourceSnapshot dataSource, String key) {
         String value = dataSource.configValue(key);
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("LOCAL_TEXT 설정값이 없습니다: " + key);
@@ -58,7 +65,7 @@ public class LocalTextConnector implements DataSourceConnector {
         return value;
     }
 
-    private String optionalConfig(DataSourceEntity dataSource, String key) {
+    private String optionalConfig(DataSourceSnapshot dataSource, String key) {
         String value = dataSource.configValue(key);
         return value == null || value.isBlank() ? null : value;
     }

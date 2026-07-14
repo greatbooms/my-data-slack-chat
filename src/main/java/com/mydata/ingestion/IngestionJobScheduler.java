@@ -39,7 +39,7 @@ public class IngestionJobScheduler {
 
     public int runPendingJobsNow() {
         List<IngestionJobEntity> pendingJobs = ingestionJobs
-            .findTop10ByStatusOrderByCreatedAtAsc(IngestionJobStatus.PENDING);
+            .findTop10RunnablePendingJobs();
         if (pendingJobs.isEmpty()) {
             return 0;
         }

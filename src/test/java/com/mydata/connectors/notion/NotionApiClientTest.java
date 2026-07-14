@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class NotionApiClientTest {
     private HttpServer server;
     private final List<String> requests = new ArrayList<>();
+    private final List<String> requestBodies = new ArrayList<>();
 
     @BeforeEach
     void startServer() throws Exception {
@@ -60,6 +62,30 @@ class NotionApiClientTest {
                       "title": [
                         { "plain_text": "Project Brief" }
                       ]
+                    },
+                    "Status": {
+                      "type": "status",
+                      "status": { "name": "In progress" }
+                    },
+                    "Priority": {
+                      "type": "select",
+                      "select": { "name": "High" }
+                    },
+                    "Tags": {
+                      "type": "multi_select",
+                      "multi_select": [{ "name": "Backend" }, { "name": "RAG" }]
+                    },
+                    "Done": {
+                      "type": "checkbox",
+                      "checkbox": true
+                    },
+                    "Estimate": {
+                      "type": "number",
+                      "number": 8
+                    },
+                    "Due": {
+                      "type": "date",
+                      "date": { "start": "2026-07-13", "end": "2026-07-14" }
                     }
                   }
                 }
@@ -79,6 +105,14 @@ class NotionApiClientTest {
         assertThat(page.createdByUserId()).isEqualTo("creator-user");
         assertThat(page.lastEditedByUserId()).isEqualTo("editor-user");
         assertThat(page.lastEditedTime().toString()).isEqualTo("2026-06-02T00:00:00Z");
+        assertThat(page.properties()).containsExactly(
+            org.assertj.core.data.MapEntry.entry("Status", "In progress"),
+            org.assertj.core.data.MapEntry.entry("Priority", "High"),
+            org.assertj.core.data.MapEntry.entry("Tags", "Backend, RAG"),
+            org.assertj.core.data.MapEntry.entry("Done", "true"),
+            org.assertj.core.data.MapEntry.entry("Estimate", "8"),
+            org.assertj.core.data.MapEntry.entry("Due", "2026-07-13 - 2026-07-14")
+        );
         assertThat(requests)
             .containsExactly("GET /v1/pages/page-1 auth=Bearer notion-token version=2026-03-11");
     }
@@ -119,127 +153,60 @@ class NotionApiClientTest {
     }
 
     @Test
-    void queryDataSourcePagesPostsPageFilterAndFollowsPagination() {
+    void queryDataSourcePagesPullsOneImmutableBatchWithExactCursorRequest() {
         server.createContext("/v1/data_sources/data-source-1/query", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            requests.add(exchange.getRequestMethod() + " " + exchange.getRequestURI() + " body=" + body);
+            requestBodies.add(body);
             if (!body.contains("start_cursor")) {
-                respond(exchange, 200, """
-                    {
-                      "has_more": true,
-                      "next_cursor": "cursor-2",
-                      "request_status": { "type": "complete" },
-                      "results": [
-                        {
-                          "object": "page",
-                          "id": "row-1",
-                          "url": "https://notion.so/row-1",
-                          "created_time": "2026-06-01T00:00:00.000Z",
-                          "last_edited_time": "2026-06-03T00:00:00.000Z",
-                          "properties": {
-                            "Name": {
-                              "type": "title",
-                              "title": [ { "plain_text": "First task" } ]
-                            },
-                            "Status": {
-                              "type": "select",
-                              "select": { "name": "Done" }
-                            },
-                            "Task ID": {
-                              "type": "unique_id",
-                              "unique_id": { "prefix": "TASK", "number": 7 }
-                            },
-                            "Created": {
-                              "type": "created_time",
-                              "created_time": "2026-06-01T00:00:00.000Z"
-                            },
-                            "Created by": {
-                              "type": "created_by",
-                              "created_by": { "object": "user", "id": "user-alice", "name": "Alice" }
-                            },
-                            "Last edited": {
-                              "type": "last_edited_time",
-                              "last_edited_time": "2026-06-03T00:00:00.000Z"
-                            },
-                            "Edited by": {
-                              "type": "last_edited_by",
-                              "last_edited_by": { "object": "user", "id": "user-bob" }
-                            },
-                            "Rollup summary": {
-                              "type": "rollup",
-                              "rollup": {
-                                "type": "array",
-                                "array": [
-                                  {
-                                    "type": "rich_text",
-                                    "rich_text": [ { "plain_text": "Parent project" } ]
-                                  },
-                                  {
-                                    "type": "number",
-                                    "number": 3
-                                  }
-                                ]
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    }
-                    """);
+                respond(exchange, 200, pageQueryResponse(true, "cursor-2", "row-1", "First"));
                 return;
             }
-            respond(exchange, 200, """
-                {
-                  "has_more": false,
-                  "next_cursor": null,
-                  "request_status": { "type": "complete" },
-                  "results": [
-                    {
-                      "object": "page",
-                      "id": "row-2",
-                      "url": "https://notion.so/row-2",
-                      "created_time": "2026-06-02T00:00:00.000Z",
-                      "last_edited_time": "2026-06-04T00:00:00.000Z",
-                      "properties": {
-                        "Name": {
-                          "type": "title",
-                          "title": [ { "plain_text": "Second task" } ]
-                        },
-                        "Done": {
-                          "type": "checkbox",
-                          "checkbox": true
-                        }
-                      }
-                    }
-                  ]
-                }
+            respond(exchange, 200, pageQueryResponse(false, null, "row-2", "Second"));
+        });
+
+        NotionClient.Batch<NotionApiClient.NotionPage> first =
+            client().queryDataSourcePages("data-source-1", null);
+
+        assertThat(first.items()).extracting(NotionApiClient.NotionPage::id).containsExactly("row-1");
+        assertThat(first.nextCursor()).isEqualTo("cursor-2");
+        assertThat(requestBodies).containsExactly("{\"result_type\":\"page\",\"page_size\":100}");
+        assertThatThrownBy(() -> first.items().add(first.items().getFirst()))
+            .isInstanceOf(UnsupportedOperationException.class);
+
+        NotionClient.Batch<NotionApiClient.NotionPage> second =
+            client().queryDataSourcePages("data-source-1", first.nextCursor());
+
+        assertThat(second.items()).extracting(NotionApiClient.NotionPage::id).containsExactly("row-2");
+        assertThat(second.nextCursor()).isNull();
+        assertThat(requestBodies).containsExactly(
+            "{\"result_type\":\"page\",\"page_size\":100}",
+            "{\"result_type\":\"page\",\"page_size\":100,\"start_cursor\":\"cursor-2\"}"
+        );
+    }
+
+    @Test
+    void queryDataSourcePagesKeepsDeliveredBatchWhenLaterCursorFails() {
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/v1/data_sources/data-source-1/query", exchange -> {
+            if (requests.getAndIncrement() == 0) {
+                respond(exchange, 200, pageQueryResponse(true, "cursor-2", "row-1", "First"));
+                return;
+            }
+            respond(exchange, 404, """
+                {"object":"error","code":"object_not_found","message":"hidden"}
                 """);
         });
-        NotionApiClient client = client();
+        NotionClient.Batch<NotionApiClient.NotionPage> first =
+            client().queryDataSourcePages("data-source-1", null);
 
-        List<NotionApiClient.NotionPage> pages = client.queryDataSourcePages("data-source-1");
-
-        assertThat(pages)
-            .extracting(NotionApiClient.NotionPage::id)
-            .containsExactly("row-1", "row-2");
-        assertThat(pages.get(0).title()).isEqualTo("First task");
-        assertThat(pages.get(0).properties()).containsEntry("Status", "Done");
-        assertThat(pages.get(0).properties())
-            .containsEntry("Task ID", "TASK-7")
-            .containsEntry("Created", "2026-06-01T00:00:00.000Z")
-            .containsEntry("Created by", "Alice")
-            .containsEntry("Last edited", "2026-06-03T00:00:00.000Z")
-            .containsEntry("Edited by", "user-bob")
-            .containsEntry("Rollup summary", "Parent project, 3");
-        assertThat(pages.get(1).properties()).containsEntry("Done", "true");
-        assertThat(requests).hasSize(2);
-        assertThat(requests.get(0))
-            .contains("POST /v1/data_sources/data-source-1/query")
-            .contains("\"result_type\":\"page\"")
-            .contains("\"page_size\":100")
-            .doesNotContain("start_cursor");
-        assertThat(requests.get(1))
-            .contains("\"start_cursor\":\"cursor-2\"");
+        assertThatThrownBy(() -> client().queryDataSourcePages("data-source-1", first.nextCursor()))
+            .isInstanceOf(NotionApiException.class)
+            .satisfies(error -> {
+                NotionApiException notionError = (NotionApiException) error;
+                assertThat(notionError.statusCode()).isEqualTo(404);
+                assertThat(notionError.code()).isEqualTo("object_not_found");
+            });
+        assertThat(first.items()).extracting(NotionApiClient.NotionPage::id).containsExactly("row-1");
     }
 
     @Test
@@ -257,14 +224,14 @@ class NotionApiClientTest {
             """));
         NotionApiClient client = client();
 
-        assertThatThrownBy(() -> client.queryDataSourcePages("data-source-1"))
+        assertThatThrownBy(() -> client.queryDataSourcePages("data-source-1", null))
             .isInstanceOf(NotionApiException.class)
             .hasMessageContaining("query_result_limit_reached")
             .hasMessageNotContaining("notion-token");
     }
 
     @Test
-    void listBlockChildrenFollowsPagination() {
+    void listBlockChildrenPullsOneImmutableBatchWithExactCursorRequest() {
         server.createContext("/v1/blocks/root/children", exchange -> {
             requests.add(exchange.getRequestURI().toString());
             String query = exchange.getRequestURI().getQuery();
@@ -300,20 +267,90 @@ class NotionApiClientTest {
                 }
                 """);
         });
-        NotionApiClient client = client();
+        NotionClient.Batch<NotionApiClient.NotionBlock> first = client().listBlockChildren("root", null);
 
-        List<NotionApiClient.NotionBlock> blocks = client.listBlockChildren("root");
-
-        assertThat(blocks)
+        assertThat(first.items())
             .extracting(NotionApiClient.NotionBlock::id)
-            .containsExactly("block-1", "block-2");
-        assertThat(blocks.get(0).plainText()).isEqualTo("First");
-        assertThat(blocks.get(1).plainText()).isEqualTo("Second");
-        assertThat(blocks.get(1).hasChildren()).isTrue();
+            .containsExactly("block-1");
+        assertThat(first.nextCursor()).isEqualTo("cursor-2");
+        assertThat(first.items().getFirst().plainText()).isEqualTo("First");
+        assertThat(requests).containsExactly("/v1/blocks/root/children?page_size=100");
+        assertThatThrownBy(() -> first.items().clear())
+            .isInstanceOf(UnsupportedOperationException.class);
+
+        NotionClient.Batch<NotionApiClient.NotionBlock> second =
+            client().listBlockChildren("root", first.nextCursor());
+
+        assertThat(second.items())
+            .extracting(NotionApiClient.NotionBlock::id)
+            .containsExactly("block-2");
+        assertThat(second.nextCursor()).isNull();
+        assertThat(second.items().getFirst().plainText()).isEqualTo("Second");
+        assertThat(second.items().getFirst().hasChildren()).isTrue();
         assertThat(requests).containsExactly(
             "/v1/blocks/root/children?page_size=100",
             "/v1/blocks/root/children?page_size=100&start_cursor=cursor-2"
         );
+    }
+
+    @Test
+    void listBlockChildrenDoesNotRequestNextCursorUntilCallerPullsIt() {
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/v1/blocks/root/children", exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 200, """
+                {
+                  "has_more": true,
+                  "next_cursor": "cursor-2",
+                  "results": [
+                    {
+                      "id": "block-1",
+                      "type": "paragraph",
+                      "has_children": false,
+                      "paragraph": { "rich_text": [ { "plain_text": "First" } ] }
+                    }
+                  ]
+                }
+                """);
+        });
+
+        NotionClient.Batch<NotionApiClient.NotionBlock> batch = client().listBlockChildren("root", null);
+
+        assertThat(batch.nextCursor()).isEqualTo("cursor-2");
+        assertThat(requests).hasValue(1);
+    }
+
+    @Test
+    void listBlockChildrenParsesChildDatabaseAndUnsupportedUnderlyingType() {
+        server.createContext("/v1/blocks/root/children", exchange -> respond(exchange, 200, """
+            {
+              "has_more": false,
+              "next_cursor": null,
+              "results": [
+                {
+                  "id": "database-1",
+                  "type": "child_database",
+                  "has_children": false,
+                  "child_database": { "title": "Roadmap" }
+                },
+                {
+                  "id": "unsupported-1",
+                  "type": "unsupported",
+                  "has_children": false,
+                  "unsupported": { "block_type": "child_database" }
+                }
+              ]
+            }
+            """));
+        List<NotionApiClient.NotionBlock> blocks = client().listBlockChildren("root", null).items();
+
+        assertThat(blocks).hasSize(2);
+        assertThat(blocks.get(0).type()).isEqualTo("child_database");
+        assertThat(blocks.get(0).plainText()).isEqualTo("Roadmap");
+        assertThat(blocks.get(0).underlyingType()).isNull();
+        assertThat(blocks.get(1).type()).isEqualTo("unsupported");
+        assertThat(blocks.get(1).plainText()).isEmpty();
+        assertThat(blocks.get(1).underlyingType()).isEqualTo("child_database");
     }
 
     @Test
@@ -354,6 +391,35 @@ class NotionApiClientTest {
         assertThatThrownBy(() -> client.retrievePage("slow"))
             .isInstanceOf(NotionApiException.class)
             .hasMessageContaining("Notion API 요청에 실패했습니다");
+    }
+
+    private String pageQueryResponse(
+        boolean hasMore,
+        String nextCursor,
+        String pageId,
+        String title
+    ) {
+        String cursorJson = nextCursor == null ? "null" : "\"" + nextCursor + "\"";
+        return """
+            {
+              "has_more": %s,
+              "next_cursor": %s,
+              "request_status": { "type": "complete" },
+              "results": [{
+                "object": "page",
+                "id": "%s",
+                "url": "https://notion.so/%s",
+                "created_time": "2026-07-13T00:00:00.000Z",
+                "last_edited_time": "2026-07-13T00:00:00.000Z",
+                "properties": {
+                  "Name": {
+                    "type": "title",
+                    "title": [{ "plain_text": "%s" }]
+                  }
+                }
+              }]
+            }
+            """.formatted(hasMore, cursorJson, pageId, pageId, title);
     }
 
     private NotionApiClient client() {

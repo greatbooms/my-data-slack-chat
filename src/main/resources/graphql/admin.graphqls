@@ -8,6 +8,12 @@ type Query {
   dataSource(id: ID!): DataSource
   externalIdentities: ExternalIdentityPage!
   ingestionJobs(dataSourceId: ID!, first: Int = 20): [IngestionJob!]!
+  ingestionJobItems(
+    jobId: ID!
+    status: IngestionJobItemStatus
+    first: Int = 50
+    after: String
+  ): IngestionJobItemPage!
 }
 
 type Mutation {
@@ -175,9 +181,25 @@ type IngestionJob {
   triggerType: IngestionTriggerType!
   status: IngestionJobStatus!
   errorMessage: String
+  succeededItemCount: Int!
+  failedItemCount: Int!
   startedAt: String
   finishedAt: String
   createdAt: String!
+}
+
+type IngestionJobItemPage {
+  items: [IngestionJobItem!]!
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+type IngestionJobItem {
+  externalId: String
+  documentId: ID
+  status: IngestionJobItemStatus!
+  reason: String
+  processedAt: String!
 }
 
 enum DataSourceType {
@@ -212,6 +234,12 @@ enum IngestionTriggerType {
 enum IngestionJobStatus {
   PENDING
   RUNNING
+  SUCCEEDED
+  PARTIAL_FAILED
+  FAILED
+}
+
+enum IngestionJobItemStatus {
   SUCCEEDED
   FAILED
 }

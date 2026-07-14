@@ -1,5 +1,6 @@
 package com.mydata.slackbot;
 
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.slack.SlackChannelConnector;
 import com.mydata.connectors.slack.SlackClient;
 import com.mydata.connectors.slack.SlackRawDocumentFactory;
@@ -51,7 +52,12 @@ public class SlackMessageIngestionEventConsumer implements SlackMessageEventCons
         for (DataSourceEntity dataSource : matchingSources) {
             try {
                 SlackClient.SlackMessage message = toSlackMessage(event);
-                pipeline.ingest(dataSource, rawDocuments.toRawDocument(dataSource, message));
+                DataSourceSnapshot source = DataSourceSnapshot.from(dataSource);
+                pipeline.ingest(
+                    source.workspaceId(),
+                    source.id(),
+                    rawDocuments.toRawDocument(source, message)
+                );
             } catch (RuntimeException exception) {
                 log.warn(
                     "Slack 메시지 event 적재 실패. teamId={}, channelId={}, messageTs={}, dataSourceId={}",

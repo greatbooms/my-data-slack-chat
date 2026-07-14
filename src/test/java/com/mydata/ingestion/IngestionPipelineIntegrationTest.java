@@ -1,7 +1,11 @@
 package com.mydata.ingestion;
 
+import com.mydata.connectors.core.ConnectorDocumentEvent;
+import com.mydata.connectors.core.ConnectorEventSink;
+import com.mydata.connectors.core.ConnectorItemReference;
+import com.mydata.connectors.core.ConnectorItemType;
 import com.mydata.connectors.core.DataSourceConnector;
-import com.mydata.connectors.core.DocumentHandler;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawContent;
 import com.mydata.connectors.core.RawExternalDocument;
@@ -46,6 +50,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
+    @Autowired IngestionJobItemRepository jobItems;
     @Autowired IngestionCommandService ingestionCommands;
     @Autowired IngestionJobScheduler ingestionJobScheduler;
     @Autowired IngestionWorker worker;
@@ -107,8 +112,58 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 assertThat(chunk.getTokenCount()).isEqualTo(8);
             });
         assertThat(reloadedJob.getStatus()).isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(job.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getExternalId()).isEqualTo("data-source:note-1");
+                assertThat(item.getDocumentId()).isEqualTo(document.getId());
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getReason()).isNull();
+            });
         assertThat(dataSources.findById(dataSource.getId()).orElseThrow().getLastSyncedAt())
             .isNotNull();
+    }
+
+    @Test
+    void unchangedReingestionReturnsExistingDocumentIdForSucceededItem() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity user = users.save(UserEntity.create(
+            "unchanged-local-owner-" + suffix + "@example.com",
+            "Unchanged Local Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Unchanged workspace"));
+        DataSourceEntity dataSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Unchanged local notes",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        dataSource.putConfig("externalId", "unchanged-note");
+        dataSource.putConfig("title", "Unchanged note");
+        dataSource.putConfig("content", "same content");
+        dataSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        dataSource = dataSources.saveAndFlush(dataSource);
+
+        IngestionJobEntity firstJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), dataSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+        worker.run(firstJob.getId());
+        UUID documentId = documents.findByDataSourceIdAndExternalId(dataSource.getId(), "unchanged-note")
+            .orElseThrow()
+            .getId();
+        IngestionJobEntity secondJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), dataSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+
+        worker.run(secondJob.getId());
+
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(secondJob.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getDocumentId()).isEqualTo(documentId);
+            });
     }
 
     @Test
@@ -137,6 +192,66 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             .isEqualTo(IngestionJobStatus.SUCCEEDED);
         assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "scheduled-note"))
             .isPresent();
+    }
+
+    @Test
+    void schedulerSkipsBusySourceBacklogAndRunsAnotherSource() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity user = users.save(UserEntity.create(
+            "scheduler-fairness-" + suffix + "@example.com",
+            "Scheduler Fairness Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(
+            user.getId(),
+            "Scheduler fairness workspace"
+        ));
+        DataSourceEntity busySource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Busy source",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        IngestionJobEntity runningJob = IngestionJobEntity.pending(
+            workspace.getId(), busySource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        );
+        runningJob.markRunning();
+        ingestionJobs.saveAndFlush(runningJob);
+        for (int index = 0; index < 10; index++) {
+            ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+                workspace.getId(), busySource.getId(), IngestionTriggerType.MANUAL, user.getId()
+            ));
+        }
+        jdbcTemplate.update("""
+            UPDATE ingestion_jobs
+            SET created_at = now() - interval '2 hours'
+            WHERE data_source_id = ?
+              AND status = 'PENDING'
+            """, busySource.getId());
+
+        DataSourceEntity runnableSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Runnable source",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        runnableSource.putConfig("externalId", "runnable-note");
+        runnableSource.putConfig("title", "Runnable note");
+        runnableSource.putConfig("content", "runnable content");
+        runnableSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        runnableSource = dataSources.saveAndFlush(runnableSource);
+        IngestionJobEntity runnableJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), runnableSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+
+        ingestionJobScheduler.runPendingJobsNow();
+
+        assertThat(ingestionJobs.findById(runnableJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(ingestionJobs.findByDataSourceIdOrderByCreatedAtDesc(busySource.getId()))
+            .filteredOn(job -> job.getStatus() == IngestionJobStatus.PENDING)
+            .hasSize(10);
     }
 
     @Test
@@ -293,7 +408,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             new RawExternalDocument(
                 "metadata-page",
                 DataSourceType.NOTION,
@@ -349,7 +465,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             rawLocalTextDocument(
                 "blank-principal-note",
                 "Blank principal",
@@ -378,7 +495,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         ));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> pipeline.ingest(
-            dataSource,
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
             rawLocalTextDocument(
                 "write-permission-note",
                 "Write permission",
@@ -392,6 +510,106 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(documents.findByDataSourceIdAndExternalId(dataSource.getId(), "write-permission-note"))
             .isEmpty();
+    }
+
+    @Test
+    void unchangedReingestionRestoresSoftDeletedDocumentWithSameId() {
+        RestoreFixture fixture = restoreFixture("Unchanged restore");
+        RawExternalDocument rawDocument = restoreDocument(
+            fixture, "unchanged-restore", "unchanged restored content", "restore-hash-1"
+        );
+        UUID originalDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
+        );
+        UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
+            .getFirst()
+            .getId();
+        jdbcTemplate.update(
+            "UPDATE external_documents SET deleted_at = now() WHERE id = ?",
+            originalDocumentId
+        );
+
+        UUID restoredDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
+        );
+
+        ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
+        assertThat(restored.getId()).isEqualTo(originalDocumentId);
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(chunks.findByDocumentIdOrderByChunkIndex(restored.getId()))
+            .singleElement()
+            .satisfies(chunk -> assertThat(chunk.getId()).isEqualTo(originalChunkId));
+    }
+
+    @Test
+    void changedReingestionRestoresSoftDeletedDocumentWithSameId() {
+        RestoreFixture fixture = restoreFixture("Changed restore");
+        UUID originalDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(),
+            fixture.dataSource().getId(),
+            restoreDocument(fixture, "changed-restore", "original content", "restore-hash-1")
+        );
+        UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
+            .getFirst()
+            .getId();
+        jdbcTemplate.update(
+            "UPDATE external_documents SET deleted_at = now() WHERE id = ?",
+            originalDocumentId
+        );
+
+        UUID restoredDocumentId = pipeline.ingest(
+            fixture.dataSource().getWorkspaceId(),
+            fixture.dataSource().getId(),
+            restoreDocument(fixture, "changed-restore", "changed restored content", "restore-hash-2")
+        );
+
+        ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
+        assertThat(restored.getId()).isEqualTo(originalDocumentId);
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(chunks.findByDocumentIdOrderByChunkIndex(restored.getId()))
+            .singleElement()
+            .satisfies(chunk -> {
+                assertThat(chunk.getId()).isNotEqualTo(originalChunkId);
+                assertThat(chunk.getContent()).isEqualTo("changed restored content");
+            });
+    }
+
+    private RestoreFixture restoreFixture(String name) {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create(
+            "restore-" + suffix + "@example.com", "Restore Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), name));
+        DataSourceEntity dataSource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(), DataSourceType.NOTION, name, DataSourceStatus.ACTIVE, SyncMode.MANUAL
+        ));
+        return new RestoreFixture(owner, dataSource);
+    }
+
+    private RawExternalDocument restoreDocument(
+        RestoreFixture fixture,
+        String externalId,
+        String content,
+        String contentHash
+    ) {
+        return new RawExternalDocument(
+            externalId,
+            DataSourceType.NOTION,
+            "Restore page",
+            "https://notion.so/" + externalId,
+            "text/plain",
+            null,
+            null,
+            contentHash,
+            Map.of(),
+            new RawContent(content, "text/plain"),
+            List.of(new RawAclEntry(
+                PrincipalKeys.user(fixture.owner().getId()), "READ", false, "NOTION"
+            ))
+        );
+    }
+
+    private record RestoreFixture(UserEntity owner, DataSourceEntity dataSource) {
     }
 
     private RawExternalDocument rawLocalTextDocument(
@@ -427,8 +645,8 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                 }
 
                 @Override
-                public SyncCursor fetchChanges(DataSourceEntity dataSource, SyncCursor cursor, DocumentHandler handler) {
-                    handler.handle(new RawExternalDocument(
+                public SyncCursor fetchChanges(DataSourceSnapshot dataSource, ConnectorEventSink sink) {
+                    RawExternalDocument document = new RawExternalDocument(
                         "bad-note",
                         DataSourceType.NOTION,
                         "Bad note",
@@ -439,9 +657,18 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
                         "bad-hash",
                         Map.of(),
                         new RawContent("bad content", "text/plain"),
-                        List.of(new RawAclEntry(PrincipalKeys.user(dataSource.getWorkspaceId()), "WRITE", false, "TEST"))
+                        List.of(new RawAclEntry(PrincipalKeys.user(dataSource.workspaceId()), "WRITE", false, "TEST"))
+                    );
+                    sink.onDocument(new ConnectorDocumentEvent(
+                        document,
+                        new ConnectorItemReference(
+                            ConnectorItemType.PAGE,
+                            "bad-note",
+                            "Bad note",
+                            List.of("Bad note")
+                        )
                     ));
-                    return cursor;
+                    return dataSource.cursor();
                 }
             };
         }

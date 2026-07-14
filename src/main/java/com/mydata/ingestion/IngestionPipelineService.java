@@ -3,7 +3,6 @@ package com.mydata.ingestion;
 import com.mydata.auth.Permission;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawExternalDocument;
-import com.mydata.datasources.DataSourceEntity;
 import com.mydata.embeddings.DocumentEmbeddingRepository;
 import com.mydata.embeddings.EmbeddingClient;
 import com.mydata.documents.DocumentAclEntryEntity;
@@ -19,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,21 +47,21 @@ public class IngestionPipelineService {
     }
 
     @Transactional
-    public void ingest(DataSourceEntity dataSource, RawExternalDocument rawDocument) {
+    public UUID ingest(UUID workspaceId, UUID dataSourceId, RawExternalDocument rawDocument) {
         validateAclEntries(rawDocument.aclEntries());
-        var existingDocument = documents.findByDataSourceIdAndExternalId(dataSource.getId(), rawDocument.externalId());
+        var existingDocument = documents.findByDataSourceIdAndExternalId(dataSourceId, rawDocument.externalId());
         if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
             ExternalDocumentEntity document = existingDocument.get();
             updateDocumentFromIngestion(document, rawDocument);
             documents.saveAndFlush(document);
-            backfillMissingEmbeddings(existingDocument.get());
-            return;
+            backfillMissingEmbeddings(document);
+            return document.getId();
         }
 
         ExternalDocumentEntity document = existingDocument
             .orElseGet(() -> ExternalDocumentEntity.create(
-                dataSource.getWorkspaceId(),
-                dataSource.getId(),
+                workspaceId,
+                dataSourceId,
                 rawDocument.externalId(),
                 rawDocument.sourceType().name(),
                 rawDocument.title(),
@@ -75,6 +75,7 @@ public class IngestionPipelineService {
         replaceAclEntries(document, rawDocument.aclEntries());
         List<DocumentChunkEntity> savedChunks = replaceChunks(document, rawDocument.content().text());
         writeEmbeddings(savedChunks);
+        return document.getId();
     }
 
     private void updateDocumentFromIngestion(ExternalDocumentEntity document, RawExternalDocument rawDocument) {

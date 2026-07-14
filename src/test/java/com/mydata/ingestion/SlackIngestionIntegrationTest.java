@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,6 +44,7 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
     @Autowired IngestionJobRepository ingestionJobs;
+    @Autowired IngestionJobItemRepository jobItems;
     @Autowired IngestionWorker worker;
     @Autowired ExternalDocumentRepository documents;
     @Autowired DocumentAclEntryRepository aclEntries;
@@ -118,6 +120,14 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
             });
         assertThat(ingestionJobs.findById(job.getId()).orElseThrow().getStatus())
             .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(job.getId()))
+            .singleElement()
+            .satisfies(item -> {
+                assertThat(item.getExternalId()).isEqualTo("data-source:C123:1710000000.000100");
+                assertThat(item.getDocumentId()).isEqualTo(document.getId());
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getReason()).isNull();
+            });
     }
 
     @Test
@@ -154,6 +164,10 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
 
         worker.run(firstJob.getId());
 
+        UUID firstMessageId = documents.findByDataSourceIdAndExternalId(
+            dataSource.getId(), "C123:1710000000.000100"
+        ).orElseThrow().getId();
+
         assertThat(slack.requestedOldestMessageTs).containsExactly((String) null);
         assertThat(dataSources.findById(dataSource.getId()).orElseThrow().syncCursorValue())
             .containsEntry("latestMessageTs", "1710000000.000100")
@@ -184,6 +198,10 @@ class SlackIngestionIntegrationTest extends PostgresIntegrationTest {
         assertThat(dataSources.findById(dataSource.getId()).orElseThrow().syncCursorValue())
             .containsEntry("latestMessageTs", "1710000005.000100")
             .doesNotContainKey("trackedThreadRootTs");
+        assertThat(documents.findById(firstMessageId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(documents.findByDataSourceIdAndExternalId(
+            dataSource.getId(), "C123:1710000005.000100"
+        )).isPresent();
     }
 
     private Map<String, Object> metadata(ExternalDocumentEntity document) throws Exception {

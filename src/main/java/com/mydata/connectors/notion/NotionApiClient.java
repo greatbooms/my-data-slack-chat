@@ -86,58 +86,38 @@ public class NotionApiClient implements NotionClient {
     }
 
     @Override
-    public List<NotionPage> queryDataSourcePages(String dataSourceId) {
-        List<NotionPage> pages = new ArrayList<>();
-        String nextCursor = null;
-        boolean hasMore;
-
-        do {
-            JsonNode root = postJson(
-                "/v1/data_sources/" + pathSegment(dataSourceId) + "/query",
-                queryDataSourceRequestBody(nextCursor)
-            );
-            rejectIncompleteQuery(root);
-            JsonNode results = root.path("results");
-            if (results.isArray()) {
-                for (JsonNode result : results) {
-                    if ("page".equals(result.path("object").asString())) {
-                        pages.add(toPage(result));
-                    }
-                }
+    public Batch<NotionPage> queryDataSourcePages(String dataSourceId, String startCursor) {
+        JsonNode root = postJson(
+            "/v1/data_sources/" + pathSegment(dataSourceId) + "/query",
+            queryDataSourceRequestBody(startCursor)
+        );
+        rejectIncompleteQuery(root);
+        List<NotionPage> batch = new ArrayList<>();
+        for (JsonNode result : root.path("results")) {
+            if ("page".equals(result.path("object").asString())) {
+                batch.add(toPage(result));
             }
-
-            hasMore = root.path("has_more").asBoolean(false);
-            nextCursor = blankToNull(root.path("next_cursor").asString(null));
-        } while (hasMore && nextCursor != null);
-
-        return pages;
+        }
+        return new Batch<>(batch, nextCursor(root));
     }
 
     @Override
-    public List<NotionBlock> listBlockChildren(String blockId) {
-        List<NotionBlock> blocks = new ArrayList<>();
-        String nextCursor = null;
-        boolean hasMore;
+    public Batch<NotionBlock> listBlockChildren(String blockId, String startCursor) {
+        String path = "/v1/blocks/" + pathSegment(blockId) + "/children?page_size=" + PAGE_SIZE;
+        if (startCursor != null) {
+            path += "&start_cursor=" + queryParam(startCursor);
+        }
 
-        do {
-            String path = "/v1/blocks/" + pathSegment(blockId) + "/children?page_size=" + PAGE_SIZE;
-            if (nextCursor != null) {
-                path += "&start_cursor=" + queryParam(nextCursor);
-            }
+        JsonNode root = getJson(path);
+        List<NotionBlock> batch = new ArrayList<>();
+        root.path("results").forEach(block -> batch.add(toBlock(block)));
+        return new Batch<>(batch, nextCursor(root));
+    }
 
-            JsonNode root = getJson(path);
-            JsonNode results = root.path("results");
-            if (results.isArray()) {
-                for (JsonNode result : results) {
-                    blocks.add(toBlock(result));
-                }
-            }
-
-            hasMore = root.path("has_more").asBoolean(false);
-            nextCursor = blankToNull(root.path("next_cursor").asString(null));
-        } while (hasMore && nextCursor != null);
-
-        return blocks;
+    private String nextCursor(JsonNode root) {
+        return root.path("has_more").asBoolean(false)
+            ? blankToNull(root.path("next_cursor").asString(null))
+            : null;
     }
 
     private JsonNode getJson(String pathAndQuery) {
@@ -179,9 +159,7 @@ public class NotionApiClient implements NotionClient {
         JsonNode root = readJson(response.body());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             String code = blankToNull(root.path("code").asString(null));
-            throw new NotionApiException(
-                "Notion API 오류: status=" + response.statusCode() + ", code=" + (code == null ? "unknown" : code)
-            );
+            throw new NotionApiException(response.statusCode(), code);
         }
         return root;
     }
@@ -227,7 +205,10 @@ public class NotionApiClient implements NotionClient {
             block.path("id").asString(),
             type,
             extractBlockPlainText(block, type),
-            block.path("has_children").asBoolean(false)
+            block.path("has_children").asBoolean(false),
+            "unsupported".equals(type)
+                ? blankToNull(block.path("unsupported").path("block_type").asString(null))
+                : null
         );
     }
 
@@ -287,7 +268,7 @@ public class NotionApiClient implements NotionClient {
         if (!richText.isBlank()) {
             return richText;
         }
-        if ("child_page".equals(type)) {
+        if ("child_page".equals(type) || "child_database".equals(type)) {
             return typedBlock.path("title").asString("");
         }
         return "";
@@ -535,7 +516,8 @@ public class NotionApiClient implements NotionClient {
         String id,
         String type,
         String plainText,
-        boolean hasChildren
+        boolean hasChildren,
+        String underlyingType
     ) {
     }
 }

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -553,6 +553,8 @@ describe('관리자 앱 인증 흐름', () => {
         triggerType: 'MANUAL',
         status: 'PENDING',
         errorMessage: null,
+        succeededItemCount: 0,
+        failedItemCount: 0,
         startedAt: null,
         finishedAt: null,
         createdAt: '2026-06-22T00:00:00Z'
@@ -568,6 +570,8 @@ describe('관리자 앱 인증 흐름', () => {
           triggerType: 'MANUAL',
           status: 'PENDING',
           errorMessage: null,
+          succeededItemCount: 0,
+          failedItemCount: 0,
           startedAt: null,
           finishedAt: null,
           createdAt: '2026-06-22T00:00:00Z'
@@ -590,7 +594,246 @@ describe('관리자 앱 인증 흐름', () => {
     expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).query).toContain('AdminIngestionJobs');
   });
 
-  it('Notion 데이터소스를 만들 때 루트 페이지 ID를 함께 보낸다', async () => {
+  it('PARTIAL_FAILED 수집 job의 성공·실패 건수와 선택한 실패 상세를 표시한다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobs', [
+        ingestionJobFixture({
+          id: 'partial-job',
+          status: 'PARTIAL_FAILED',
+          errorMessage: '전체 3개 중 1개 실패',
+          succeededItemCount: 2,
+          failedItemCount: 1,
+          startedAt: '2026-07-13T01:00:00Z',
+          finishedAt: '2026-07-13T01:01:00Z',
+          createdAt: '2026-07-13T01:00:00Z'
+        })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobItems', {
+        items: [{
+          externalId: 'database:bad-database',
+          documentId: null,
+          status: 'FAILED',
+          reason: '[DATABASE] Root / Hidden DB (RETRIEVE): 원본 database를 integration에 공유하세요',
+          processedAt: '2026-07-13T01:00:30Z'
+        }],
+        hasNextPage: false,
+        endCursor: null
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+    fireEvent.click(await screen.findByRole('button', { name: 'Notion 문서함 수집 기록' }));
+
+    const partialStatus = await screen.findByText('PARTIAL_FAILED');
+    const jobRow = partialStatus.closest('tr');
+    expect(jobRow).not.toBeNull();
+    expect(within(jobRow as HTMLTableRowElement).getByText('2')).toBeVisible();
+    expect(within(jobRow as HTMLTableRowElement).getByText('1')).toBeVisible();
+    expect(fetchMock.mock.calls.some((call) => {
+      const body = JSON.parse((call[1] as RequestInit | undefined)?.body as string ?? '{}');
+      return body.query?.includes('AdminIngestionJobItems');
+    })).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'partial-job 실패 상세 보기' }));
+
+    expect(await screen.findByText('database:bad-database')).toBeVisible();
+    expect(screen.getByText(/원본 database를 integration에 공유하세요/)).toBeVisible();
+    expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string).query)
+      .toContain('AdminIngestionJobItems');
+  });
+
+  it('job 선택 전과 SUCCEEDED job에는 실패 item query를 보내지 않는다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobs', [
+        ingestionJobFixture({
+          id: 'succeeded-job',
+          status: 'SUCCEEDED',
+          succeededItemCount: 3,
+          failedItemCount: 0
+        })
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    await screen.findByText('Notion 문서함');
+    expect(fetchMock.mock.calls.some(isIngestionJobItemsCall)).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Notion 문서함 수집 기록' }));
+
+    expect(await screen.findByText('SUCCEEDED')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /실패 상세 보기/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(isIngestionJobItemsCall)).toBe(false);
+  });
+
+  it('실패 항목 더 보기로 다음 cursor 페이지를 이어 붙인다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobs', [
+        ingestionJobFixture({
+          id: 'partial-job',
+          status: 'PARTIAL_FAILED',
+          succeededItemCount: 1,
+          failedItemCount: 2
+        })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobItems', {
+        items: [ingestionJobItemFixture({ externalId: 'database:failed-1' })],
+        hasNextPage: true,
+        endCursor: 'cursor-1'
+      }))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobItems', {
+        items: [ingestionJobItemFixture({ externalId: 'database:failed-2' })],
+        hasNextPage: false,
+        endCursor: null
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+    fireEvent.click(await screen.findByRole('button', { name: 'Notion 문서함 수집 기록' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'partial-job 실패 상세 보기' }));
+
+    expect(await screen.findByText('database:failed-1')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '실패 항목 더 보기' }));
+
+    expect(await screen.findByText('database:failed-2')).toBeVisible();
+    expect(screen.getAllByText('database:failed-1')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '실패 항목 더 보기' })).not.toBeInTheDocument();
+    const nextPageBody = JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string);
+    expect(nextPageBody.variables).toMatchObject({
+      jobId: 'partial-job',
+      status: 'FAILED',
+      first: 50,
+      after: 'cursor-1'
+    });
+  });
+
+  it('실패 상세 조회 실패 상태를 표시하고 job 목록을 유지한다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+      ]))
+      .mockResolvedValueOnce(graphqlResponse('ingestionJobs', [
+        ingestionJobFixture({
+          id: 'failed-job',
+          status: 'FAILED',
+          errorMessage: '모든 항목 실패',
+          failedItemCount: 1
+        })
+      ]))
+      .mockRejectedValueOnce(new Error('network failed'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+    fireEvent.click(await screen.findByRole('button', { name: 'Notion 문서함 수집 기록' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'failed-job 실패 상세 보기' }));
+
+    expect(await screen.findByText('실패 상세를 불러오지 못했습니다.')).toBeVisible();
+    expect(screen.getByText('FAILED')).toBeVisible();
+    expect(screen.getByText('모든 항목 실패')).toBeVisible();
+  });
+
+  it('선택한 실패 job이 최신 목록에서 성공으로 바뀌면 stale 상세를 닫고 item을 재조회하지 않는다', async () => {
+    let jobsRequestCount = 0;
+    let itemsRequestCount = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.body) {
+        return jsonResponse({
+          headerName: 'X-CSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'csrf-token'
+        });
+      }
+
+      const body = JSON.parse(init.body as string);
+      if (body.query?.includes('AdminDataSources')) {
+        return adminDataSourcesResponse([
+          dataSourceFixture({ id: 'source-id', name: 'Notion 문서함' })
+        ]);
+      }
+      if (body.query?.includes('AdminIngestionJobs')) {
+        jobsRequestCount += 1;
+        return graphqlResponse('ingestionJobs', [
+          ingestionJobFixture(jobsRequestCount === 1
+            ? {
+                id: 'failed-job',
+                status: 'FAILED',
+                errorMessage: '한 항목 실패',
+                failedItemCount: 1
+              }
+            : {
+                id: 'failed-job',
+                status: 'SUCCEEDED',
+                errorMessage: null,
+                succeededItemCount: 1,
+                failedItemCount: 0
+              })
+        ]);
+      }
+      if (body.query?.includes('AdminIngestionJobItems')) {
+        itemsRequestCount += 1;
+        return graphqlResponse('ingestionJobItems', {
+          items: [ingestionJobItemFixture({ externalId: 'database:stale-failure' })],
+          hasNextPage: false,
+          endCursor: null
+        });
+      }
+      if (body.query?.includes('RequestDataSourceSync')) {
+        return graphqlResponse('requestDataSourceSync', ingestionJobFixture({
+          id: 'new-job',
+          status: 'PENDING'
+        }));
+      }
+      throw new Error('예상하지 못한 요청입니다.');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+    fireEvent.click(await screen.findByRole('button', { name: 'Notion 문서함 수집 기록' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'failed-job 실패 상세 보기' }));
+    expect(await screen.findByText('database:stale-failure')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Notion 문서함 수동 수집' }));
+
+    expect(await screen.findByText('SUCCEEDED')).toBeVisible();
+    await waitFor(() => {
+      expect(jobsRequestCount).toBe(2);
+      expect(screen.queryByLabelText('failed-job 실패 상세')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'failed-job 실패 상세 보기' })).not.toBeInTheDocument();
+    expect(itemsRequestCount).toBe(1);
+  });
+
+  it('Notion 페이지 데이터소스를 만들 때 페이지 링크를 함께 보낸다', async () => {
+    const pageLink = 'https://www.notion.so/greatbooms/Project-Wiki-248104cd477e80fdb757e945d38000bd?pvs=4';
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
         headerName: 'X-CSRF-TOKEN',
@@ -621,13 +864,13 @@ describe('관리자 앱 인증 흐름', () => {
       .mockResolvedValueOnce(graphqlResponse('createDataSource', dataSourceFixture({
         id: 'notion-source-id',
         name: 'Notion wiki',
-        notionRootPageId: 'root-page-id'
+        notionRootPageId: '248104cd-477e-80fd-b757-e945d38000bd'
       })))
       .mockResolvedValueOnce(adminDataSourcesResponse([
         dataSourceFixture({
           id: 'notion-source-id',
           name: 'Notion wiki',
-          notionRootPageId: 'root-page-id'
+          notionRootPageId: '248104cd-477e-80fd-b757-e945d38000bd'
         })
       ]));
     vi.stubGlobal('fetch', fetchMock);
@@ -654,8 +897,13 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'NOTION' }
     });
-    fireEvent.change(screen.getByLabelText('Notion 루트 페이지 ID'), {
-      target: { value: 'root-page-id' }
+    const pageInput = screen.getByLabelText('Notion 루트 페이지 링크 또는 ID');
+    expect(pageInput).toHaveAttribute(
+      'placeholder',
+      'https://www.notion.so/workspace/Project-Wiki-...'
+    );
+    fireEvent.change(pageInput, {
+      target: { value: pageLink }
     });
     fireEvent.click(screen.getByRole('button', { name: '저장' }));
 
@@ -667,12 +915,71 @@ describe('관리자 앱 인증 흐름', () => {
     const createBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string);
     expect(createBody.variables.input).toMatchObject({
       name: 'Notion wiki',
-      notionRootPageId: 'root-page-id',
+      notionRootPageId: pageLink,
       ownerUserId: 'user-id',
       type: 'NOTION',
       workspaceId: 'workspace-id'
     });
     expect(createBody.variables.input.notionDatabaseId).toBeUndefined();
+  });
+
+  it('잘못된 Notion 페이지 링크 저장 오류를 폼에 표시한다', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([]))
+      .mockResolvedValueOnce(adminDataSourceFormOptionsResponse({
+        users: [{
+          id: 'user-id',
+          email: 'owner@example.com',
+          displayName: '데이터 오너',
+          role: 'USER',
+          status: 'ACTIVE',
+          deletedAt: null
+        }],
+        workspaces: [{
+          id: 'workspace-id',
+          ownerUserId: 'user-id',
+          name: 'Personal',
+          deletedAt: null
+        }]
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { createDataSource: null },
+        errors: [{ message: 'notionRootPageId 형식이 올바르지 않습니다' }]
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('데이터소스가 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '데이터소스 추가' }));
+    expect(await screen.findByRole('option', { name: 'Personal' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Invalid Notion page' }
+    });
+    fireEvent.change(screen.getByLabelText('워크스페이스'), {
+      target: { value: 'workspace-id' }
+    });
+    fireEvent.change(screen.getByLabelText('소유 유저'), {
+      target: { value: 'user-id' }
+    });
+    fireEvent.change(screen.getByLabelText('종류'), {
+      target: { value: 'NOTION' }
+    });
+    fireEvent.change(screen.getByLabelText('Notion 루트 페이지 링크 또는 ID'), {
+      target: { value: 'https://www.notion.so/greatbooms/not-a-page-id' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'notionRootPageId 형식이 올바르지 않습니다'
+    );
+    expect(screen.getByRole('dialog', { name: '데이터소스 추가' })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('Notion 데이터베이스 데이터소스를 만들 때 데이터베이스 링크를 함께 보낸다', async () => {
@@ -738,7 +1045,7 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('Notion 수집 대상'), {
       target: { value: 'DATABASE' }
     });
-    expect(screen.queryByLabelText('Notion 루트 페이지 ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Notion 루트 페이지 링크 또는 ID')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Notion 데이터베이스 링크 또는 ID'), {
       target: { value: databaseLink }
     });
@@ -821,7 +1128,7 @@ describe('관리자 앱 인증 흐름', () => {
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'SLACK' }
     });
-    expect(screen.queryByLabelText('Notion 루트 페이지 ID')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Notion 루트 페이지 링크 또는 ID')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Slack 채널 ID'), {
       target: { value: 'C1234567890' }
     });
@@ -993,6 +1300,39 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     deletedAt: null,
     ...overrides
   };
+}
+
+function ingestionJobFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'job-id',
+    workspaceId: 'workspace-id',
+    dataSourceId: 'source-id',
+    triggerType: 'MANUAL',
+    status: 'PENDING',
+    errorMessage: null,
+    succeededItemCount: 0,
+    failedItemCount: 0,
+    startedAt: null,
+    finishedAt: null,
+    createdAt: '2026-07-13T01:00:00Z',
+    ...overrides
+  };
+}
+
+function ingestionJobItemFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    externalId: 'database:failed',
+    documentId: null,
+    status: 'FAILED',
+    reason: '[DATABASE] Root / Hidden DB (RETRIEVE): 원본 database를 integration에 공유하세요',
+    processedAt: '2026-07-13T01:00:30Z',
+    ...overrides
+  };
+}
+
+function isIngestionJobItemsCall(call: unknown[]) {
+  const body = JSON.parse((call[1] as RequestInit | undefined)?.body as string ?? '{}');
+  return body.query?.includes('AdminIngestionJobItems') === true;
 }
 
 function externalIdentityFixture(overrides: Record<string, unknown> = {}) {

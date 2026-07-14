@@ -6,7 +6,9 @@ import com.mydata.admin.datasources.AdminDataSourceInputs.UpdateDataSourceInput;
 import com.mydata.admin.datasources.AdminDataSourcePagePayload;
 import com.mydata.admin.datasources.AdminDataSourcePayload;
 import com.mydata.admin.datasources.AdminDataSourceService;
+import com.mydata.admin.datasources.AdminIngestionJobItemPagePayload;
 import com.mydata.admin.datasources.AdminIngestionJobPayload;
+import com.mydata.admin.datasources.AdminIngestionJobService;
 import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.CreateExternalIdentityInput;
 import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.UpdateExternalIdentityInput;
 import com.mydata.admin.externalidentities.AdminExternalIdentityPagePayload;
@@ -25,6 +27,7 @@ import com.mydata.admin.workspaces.AdminWorkspacePayload;
 import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.datasources.DataSourceRepository;
 import com.mydata.ingestion.IngestionJobRepository;
+import com.mydata.ingestion.IngestionJobItemStatus;
 import com.mydata.ingestion.IngestionJobStatus;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
@@ -47,6 +50,7 @@ public class AdminGraphQlController {
     private final AdminUserService adminUsers;
     private final AdminWorkspaceService adminWorkspaces;
     private final AdminDataSourceService adminDataSources;
+    private final AdminIngestionJobService adminIngestionJobs;
     private final AdminExternalIdentityService adminExternalIdentities;
 
     public AdminGraphQlController(
@@ -56,6 +60,7 @@ public class AdminGraphQlController {
         AdminUserService adminUsers,
         AdminWorkspaceService adminWorkspaces,
         AdminDataSourceService adminDataSources,
+        AdminIngestionJobService adminIngestionJobs,
         AdminExternalIdentityService adminExternalIdentities
     ) {
         this.users = users;
@@ -64,6 +69,7 @@ public class AdminGraphQlController {
         this.adminUsers = adminUsers;
         this.adminWorkspaces = adminWorkspaces;
         this.adminDataSources = adminDataSources;
+        this.adminIngestionJobs = adminIngestionJobs;
         this.adminExternalIdentities = adminExternalIdentities;
     }
 
@@ -198,7 +204,18 @@ public class AdminGraphQlController {
         @Argument String dataSourceId,
         @Argument Integer first
     ) {
-        return adminDataSources.ingestionJobs(dataSourceId, first);
+        return adminIngestionJobs.listJobs(dataSourceId, first);
+    }
+
+    @QueryMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public AdminIngestionJobItemPagePayload ingestionJobItems(
+        @Argument String jobId,
+        @Argument IngestionJobItemStatus status,
+        @Argument Integer first,
+        @Argument String after
+    ) {
+        return adminIngestionJobs.listItems(jobId, status, first, after);
     }
 
     @MutationMapping

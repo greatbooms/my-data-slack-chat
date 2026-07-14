@@ -101,7 +101,7 @@ vi .env
 | Slack Socket Mode | 로컬에서 Slack 이벤트를 받을 때 | `SLACK_SOCKET_MODE_ENABLED`, `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN` | [Slack 앱 설정](docs/slack-app-setup.md) |
 | Slack 채널 수집 | Slack 채널 메시지를 데이터소스로 수집할 때 | `SLACK_BOT_TOKEN`, 관리자 화면의 Slack 채널 ID와 워크스페이스 URL | [Slack 앱 설정](docs/slack-app-setup.md#slack-채널-데이터소스-수집) |
 | Slack HTTP Events API | 공개 HTTPS endpoint 전환 전 URL verification과 서명 검증을 확인할 때 | `SLACK_HTTP_EVENTS_ENABLED`, `SLACK_SIGNING_SECRET` | [Slack 앱 설정](docs/slack-app-setup.md#http-events-api로-전환할-때) |
-| Notion | Notion 페이지나 데이터베이스를 수집할 때 | `NOTION_API_TOKEN`, 관리자 화면의 Notion 페이지 ID 또는 데이터베이스 링크/ID | [Notion Integration 키 발급과 페이지/데이터베이스 연결](docs/notion-integration-setup.md) |
+| Notion | Notion 페이지와 하위 페이지·데이터베이스 또는 원본 데이터베이스를 수집할 때 | `NOTION_API_TOKEN`, 관리자 화면의 Notion 페이지 링크/ID 또는 데이터베이스 링크/ID | [Notion Integration 키 발급과 페이지/데이터베이스 연결](docs/notion-integration-setup.md) |
 | OpenAI 답변 생성 | Slack 답변을 OpenAI로 생성할 때 | `MY_DATA_LLM_PROVIDER=openai`, `OPENAI_API_KEY` | [.env.example](.env.example) |
 | Claude 답변 생성 | Slack 답변을 Claude로 생성할 때 | `MY_DATA_LLM_PROVIDER=claude`, `CLAUDE_API_KEY` | [.env.example](.env.example) |
 
@@ -142,7 +142,7 @@ ADMIN_BOOTSTRAP_DISPLAY_NAME=관리자
 
 - 대시보드: 연결된 데이터소스 수, 진행 중 수집 job 수, 관리 대상 유저 수를 확인하고 새로고침할 수 있습니다.
 - 데이터소스 관리: 데이터소스를 추가, 수정, 소프트 삭제하고 수동 수집을 요청할 수 있습니다.
-- 데이터소스 수집 상태: 데이터소스 목록에서 마지막 수집 시간을 확인하고, 선택한 데이터소스의 수집 기록을 볼 수 있습니다.
+- 데이터소스 수집 상태: 데이터소스 목록에서 마지막 수집 시간을 확인하고, 선택한 데이터소스의 수집 기록과 성공·실패 개수를 볼 수 있습니다. `PARTIAL_FAILED` 또는 `FAILED` 기록에서는 `실패 상세 보기`로 실패한 external ID, 경로, 단계와 원인을 확인하고 50개씩 더 불러올 수 있습니다.
 - 유저 관리: 유저를 추가, 수정, 비활성화, 소프트 삭제, 복구하고 임시 비밀번호를 재설정할 수 있습니다.
 - 권한 관리 기반 정보: 데이터소스에는 소유 유저, 가시성, 수집 방식이 저장되며 이후 ACL 기반 검색/답변 범위 제어에 사용됩니다.
 
@@ -248,7 +248,7 @@ scripts/dev/sync-db-from-prod-env.sh --yes
 - ACL 권한 주체 모델
 - 수동 수집 job API
 - 기반 테스트용 `LOCAL_TEXT` 커넥터
-- Notion 페이지와 데이터베이스 row page 수집 커넥터
+- Notion 페이지·하위 페이지와 그 안의 데이터베이스 전체 행을 자동 수집하고, 원본 데이터베이스 row page도 직접 수집하며, 완전 성공 재수집에서 사라진 문서를 소프트 삭제하고 같은 ID 재등장 시 복구하는 커넥터
 - Slack 채널 메시지 수집 커넥터
 - 테스트/로컬 개발용 결정적 임베딩 클라이언트
 - ACL 필터가 적용된 벡터 검색
@@ -256,5 +256,5 @@ scripts/dev/sync-db-from-prod-env.sh --yes
 - Slack Socket Mode 수신 기반과 선택형 HTTP Events API 엔드포인트
 - 세션 기반 관리자 로그인과 GraphQL 관리자 API
 - React 관리자 콘솔 정적 서빙
-- 관리자 화면의 대시보드, 데이터소스 관리, 수동 수집 요청, 수집 기록 조회
+- 관리자 화면의 대시보드, 데이터소스 관리, 수동 수집 요청, `PARTIAL_FAILED`를 포함한 수집 기록 및 실패 상세 조회
 - 관리자 화면의 유저 생성, 수정, 비활성화, 소프트 삭제, 복구, 비밀번호 초기화

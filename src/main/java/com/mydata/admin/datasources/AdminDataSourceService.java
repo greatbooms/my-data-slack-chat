@@ -12,7 +12,6 @@ import com.mydata.datasources.DataSourceVisibility;
 import com.mydata.datasources.SyncMode;
 import com.mydata.ingestion.IngestionCommandService;
 import com.mydata.ingestion.IngestionJobEntity;
-import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.users.UserRepository;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,7 +39,6 @@ public class AdminDataSourceService {
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
     private final IngestionCommandService ingestionCommands;
-    private final IngestionJobRepository ingestionJobs;
     private final JdbcTemplate jdbcTemplate;
 
     public AdminDataSourceService(
@@ -48,14 +46,12 @@ public class AdminDataSourceService {
         WorkspaceRepository workspaces,
         UserRepository users,
         IngestionCommandService ingestionCommands,
-        IngestionJobRepository ingestionJobs,
         JdbcTemplate jdbcTemplate
     ) {
         this.dataSources = dataSources;
         this.workspaces = workspaces;
         this.users = users;
         this.ingestionCommands = ingestionCommands;
-        this.ingestionJobs = ingestionJobs;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -72,17 +68,6 @@ public class AdminDataSourceService {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminDataSourcePayload findDataSource(String id) {
         return AdminDataSourcePayload.from(activeDataSource(id));
-    }
-
-    @Transactional(readOnly = true)
-    @PreAuthorize("hasRole('ADMIN')")
-    public List<AdminIngestionJobPayload> ingestionJobs(String dataSourceId, Integer first) {
-        UUID parsedDataSourceId = parseId(dataSourceId, "dataSourceId");
-        int limit = first == null || first < 1 ? 20 : first;
-        return ingestionJobs.findByDataSourceIdOrderByCreatedAtDesc(parsedDataSourceId).stream()
-            .limit(limit)
-            .map(AdminIngestionJobPayload::from)
-            .toList();
     }
 
     @Transactional
@@ -239,13 +224,19 @@ public class AdminDataSourceService {
         }
 
         if (hasRootPageId) {
-            dataSource.putConfig(NOTION_ROOT_PAGE_ID_CONFIG_KEY, requireText(rootPageId, "notionRootPageId"));
+            dataSource.putConfig(
+                NOTION_ROOT_PAGE_ID_CONFIG_KEY,
+                normalizeNotionId(rootPageId, "notionRootPageId")
+            );
             dataSource.putConfig(NOTION_DATABASE_ID_CONFIG_KEY, "");
             return;
         }
 
         dataSource.putConfig(NOTION_ROOT_PAGE_ID_CONFIG_KEY, "");
-        dataSource.putConfig(NOTION_DATABASE_ID_CONFIG_KEY, normalizeNotionDatabaseId(databaseId));
+        dataSource.putConfig(
+            NOTION_DATABASE_ID_CONFIG_KEY,
+            normalizeNotionId(databaseId, "notionDatabaseId")
+        );
     }
 
     private static DataSourceType requireType(DataSourceType type) {
@@ -297,15 +288,15 @@ public class AdminDataSourceService {
         }
     }
 
-    private static String normalizeNotionDatabaseId(String value) {
-        String trimmed = requireText(value, "notionDatabaseId");
+    private static String normalizeNotionId(String value, String fieldName) {
+        String trimmed = requireText(value, fieldName);
         String candidateSource = trimmed;
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             URI uri;
             try {
                 uri = URI.create(trimmed);
             } catch (IllegalArgumentException exception) {
-                throw new IllegalArgumentException("notionDatabaseId 형식이 올바르지 않습니다", exception);
+                throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다", exception);
             }
             candidateSource = uri.getPath() == null ? "" : uri.getPath();
         }
@@ -316,7 +307,7 @@ public class AdminDataSourceService {
             candidate = matcher.group(1);
         }
         if (candidate == null) {
-            throw new IllegalArgumentException("notionDatabaseId 형식이 올바르지 않습니다");
+            throw new IllegalArgumentException(fieldName + " 형식이 올바르지 않습니다");
         }
 
         String compact = candidate.replace("-", "").toLowerCase();

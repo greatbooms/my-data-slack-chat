@@ -183,6 +183,50 @@ class PgVectorSearchRepositoryTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void excludesSoftDeletedDocumentAndReturnsItAfterRestoration() {
+        UserEntity owner = users.save(UserEntity.create(
+            "tombstone-retrieval-owner@example.com", "Tombstone Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(
+            owner.getId(), "Tombstone retrieval workspace"
+        ));
+        DataSourceEntity source = dataSources.save(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Tombstone note",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        source.putConfig("externalId", "tombstone-note");
+        source.putConfig("title", "Tombstone note");
+        source.putConfig("content", "tombstone searchable content");
+        source.putConfig("principalKey", PrincipalKeys.user(owner.getId()));
+        source = dataSources.saveAndFlush(source);
+        worker.run(jobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), source.getId(), IngestionTriggerType.MANUAL, owner.getId()
+        )).getId());
+        UUID documentId = jdbcTemplate.queryForObject(
+            "SELECT id FROM external_documents WHERE data_source_id = ? AND external_id = ?",
+            UUID.class,
+            source.getId(),
+            "tombstone-note"
+        );
+        String principal = PrincipalKeys.user(owner.getId());
+
+        assertThat(retrievalService.retrieve(
+            workspace.getId(), List.of(principal), "tombstone searchable", 5
+        )).hasSize(1);
+        jdbcTemplate.update("UPDATE external_documents SET deleted_at = now() WHERE id = ?", documentId);
+        assertThat(retrievalService.retrieve(
+            workspace.getId(), List.of(principal), "tombstone searchable", 5
+        )).isEmpty();
+        jdbcTemplate.update("UPDATE external_documents SET deleted_at = NULL WHERE id = ?", documentId);
+        assertThat(retrievalService.retrieve(
+            workspace.getId(), List.of(principal), "tombstone searchable", 5
+        )).hasSize(1);
+    }
+
+    @Test
     void prioritizesLexicalMatchesByNewestDocumentDate() {
         UserEntity owner = users.save(UserEntity.create("latest-retrieval-owner@example.com", "Owner"));
         WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Latest retrieval workspace"));

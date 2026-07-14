@@ -5,7 +5,6 @@ import {
   createAdminDataSource,
   fetchAdminDataSourceFormOptions,
   fetchAdminDataSources,
-  fetchAdminIngestionJobs,
   requestAdminDataSourceSync,
   softDeleteAdminDataSource,
   updateAdminDataSource
@@ -13,12 +12,12 @@ import {
 import { useFragment } from '../generated/fragment-masking';
 import {
   DataSourceFieldsFragmentDoc,
-  IngestionJobFieldsFragmentDoc,
   UserFieldsFragmentDoc,
   WorkspaceFieldsFragmentDoc,
   type DataSourceFieldsFragment
 } from '../generated/graphql';
 import DataSourceFormDialog, { type DataSourceFormValues } from './DataSourceFormDialog';
+import IngestionJobHistoryPanel from './IngestionJobHistoryPanel';
 
 const DATA_SOURCES_QUERY_KEY = ['admin-data-sources'];
 const DASHBOARD_QUERY_KEY = ['viewer-and-dashboard'];
@@ -41,13 +40,6 @@ function DataSourcesPage() {
   });
   const users = useFragment(UserFieldsFragmentDoc, formOptionsQuery.data?.users.items ?? []);
   const workspaces = useFragment(WorkspaceFieldsFragmentDoc, formOptionsQuery.data?.workspaces.items ?? []);
-  const jobsQuery = useQuery({
-    enabled: Boolean(selectedJobSourceId),
-    queryKey: ['admin-ingestion-jobs', selectedJobSourceId],
-    queryFn: () => fetchAdminIngestionJobs(selectedJobSourceId as string)
-  });
-  const jobs = useFragment(IngestionJobFieldsFragmentDoc, jobsQuery.data?.ingestionJobs ?? []);
-
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: DATA_SOURCES_QUERY_KEY });
     queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY });
@@ -107,16 +99,19 @@ function DataSourcesPage() {
   });
 
   function openCreateForm() {
+    saveDataSourceMutation.reset();
     setEditingDataSource(null);
     setIsFormOpen(true);
   }
 
   function openEditForm(dataSource: DataSourceFieldsFragment) {
+    saveDataSourceMutation.reset();
     setEditingDataSource(dataSource);
     setIsFormOpen(true);
   }
 
   function closeForm() {
+    saveDataSourceMutation.reset();
     setEditingDataSource(null);
     setIsFormOpen(false);
   }
@@ -224,50 +219,17 @@ function DataSourcesPage() {
       </div>
 
       {selectedDataSource ? (
-        <section className="table-shell" aria-label={`${selectedDataSource.name} 수집 기록 목록`}>
-          <header className="subsection-heading">
-            <div>
-              <h3>수집 기록</h3>
-              <p>{selectedDataSource.name}</p>
-            </div>
-          </header>
-          {jobsQuery.isLoading ? <p className="state-text">수집 기록을 불러오는 중입니다.</p> : null}
-          {jobsQuery.isError ? <p className="state-text">수집 기록을 불러오지 못했습니다.</p> : null}
-          {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 ? (
-            <p className="state-text">수집 기록이 없습니다.</p>
-          ) : null}
-          {jobs.length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>상태</th>
-                  <th>트리거</th>
-                  <th>생성</th>
-                  <th>시작</th>
-                  <th>종료</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.id}>
-                    <td>
-                      <span className="status-badge">{job.status}</span>
-                    </td>
-                    <td>{job.triggerType}</td>
-                    <td>{formatDate(job.createdAt)}</td>
-                    <td>{job.startedAt ? formatDate(job.startedAt) : '-'}</td>
-                    <td>{job.finishedAt ? formatDate(job.finishedAt) : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-        </section>
+        <IngestionJobHistoryPanel
+          key={selectedDataSource.id}
+          dataSourceId={selectedDataSource.id}
+          dataSourceName={selectedDataSource.name}
+        />
       ) : null}
 
       {isFormOpen ? (
         <DataSourceFormDialog
           dataSource={editingDataSource}
+          errorMessage={dataSourceMutationErrorMessage(saveDataSourceMutation.error)}
           isSubmitting={saveDataSourceMutation.isPending}
           users={users}
           workspaces={workspaces}
@@ -277,6 +239,17 @@ function DataSourcesPage() {
       ) : null}
     </section>
   );
+}
+
+function dataSourceMutationErrorMessage(error: unknown): string | null {
+  if (error === null || error === undefined) {
+    return null;
+  }
+  if (error instanceof Error
+    && error.message.includes('notionRootPageId 형식이 올바르지 않습니다')) {
+    return 'notionRootPageId 형식이 올바르지 않습니다';
+  }
+  return '데이터소스를 저장하지 못했습니다.';
 }
 
 function formatDate(value: string) {

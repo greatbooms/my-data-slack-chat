@@ -154,6 +154,14 @@ public class DataSourceEntity extends BaseEntity {
         }
     }
 
+    public Map<String, Object> configValues() {
+        try {
+            return Map.copyOf(readConfig());
+        } catch (Exception exception) {
+            throw new IllegalStateException("데이터소스 설정을 읽지 못했습니다", exception);
+        }
+    }
+
     public Map<String, Object> syncCursorValue() {
         try {
             return Map.copyOf(readMap(syncCursorJson));

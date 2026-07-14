@@ -7,7 +7,14 @@ public interface NotionClient {
 
     NotionApiClient.NotionDatabase retrieveDatabase(String databaseId);
 
-    List<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId);
+    Batch<NotionApiClient.NotionPage> queryDataSourcePages(String dataSourceId, String startCursor);
 
-    List<NotionApiClient.NotionBlock> listBlockChildren(String blockId);
+    Batch<NotionApiClient.NotionBlock> listBlockChildren(String blockId, String startCursor);
+
+    record Batch<T>(List<T> items, String nextCursor) {
+        public Batch {
+            items = items == null ? List.of() : List.copyOf(items);
+            nextCursor = nextCursor == null || nextCursor.isBlank() ? null : nextCursor;
+        }
+    }
 }

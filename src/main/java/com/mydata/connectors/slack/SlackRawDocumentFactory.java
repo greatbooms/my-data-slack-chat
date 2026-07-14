@@ -1,10 +1,9 @@
 package com.mydata.connectors.slack;
 
-import com.mydata.auth.PrincipalKeys;
+import com.mydata.connectors.core.DataSourceSnapshot;
 import com.mydata.connectors.core.RawAclEntry;
 import com.mydata.connectors.core.RawContent;
 import com.mydata.connectors.core.RawExternalDocument;
-import com.mydata.datasources.DataSourceEntity;
 import com.mydata.datasources.DataSourceType;
 import org.springframework.stereotype.Component;
 
@@ -20,7 +19,7 @@ import java.util.Map;
 public class SlackRawDocumentFactory {
     private static final String MIME_TYPE = "text/plain";
 
-    public RawExternalDocument toRawDocument(DataSourceEntity dataSource, SlackClient.SlackMessage message) {
+    public RawExternalDocument toRawDocument(DataSourceSnapshot dataSource, SlackClient.SlackMessage message) {
         String text = documentText(message);
         String permalink = permalink(message, blankToNull(dataSource.configValue(SlackChannelConnector.WORKSPACE_URL_CONFIG_KEY)));
         return new RawExternalDocument(
@@ -82,11 +81,8 @@ public class SlackRawDocumentFactory {
         return blankToDefault(message.threadTs(), message.messageTs());
     }
 
-    private String principalKey(DataSourceEntity dataSource) {
-        return switch (dataSource.getVisibility()) {
-            case PRIVATE -> PrincipalKeys.user(dataSource.getOwnerUserId());
-            case WORKSPACE -> PrincipalKeys.workspace(dataSource.getWorkspaceId());
-        };
+    private String principalKey(DataSourceSnapshot dataSource) {
+        return dataSource.visibilityPrincipalKey();
     }
 
     private String externalId(SlackClient.SlackMessage message) {
