@@ -48,4 +48,19 @@ public interface DataSourceRepository extends JpaRepository<DataSourceEntity, UU
           )
         """)
     Optional<DataSourceEntity> findActiveById(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT dataSource
+        FROM DataSourceEntity dataSource
+        WHERE dataSource.id = :id
+          AND dataSource.deletedAt IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM WorkspaceEntity workspace
+            WHERE workspace.id = dataSource.workspaceId
+              AND workspace.deletedAt IS NULL
+          )
+        """)
+    Optional<DataSourceEntity> findActiveByIdForUpdate(@Param("id") UUID id);
 }

@@ -195,6 +195,66 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void schedulerSkipsBusySourceBacklogAndRunsAnotherSource() {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity user = users.save(UserEntity.create(
+            "scheduler-fairness-" + suffix + "@example.com",
+            "Scheduler Fairness Owner"
+        ));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(
+            user.getId(),
+            "Scheduler fairness workspace"
+        ));
+        DataSourceEntity busySource = dataSources.saveAndFlush(DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Busy source",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        ));
+        IngestionJobEntity runningJob = IngestionJobEntity.pending(
+            workspace.getId(), busySource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        );
+        runningJob.markRunning();
+        ingestionJobs.saveAndFlush(runningJob);
+        for (int index = 0; index < 10; index++) {
+            ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+                workspace.getId(), busySource.getId(), IngestionTriggerType.MANUAL, user.getId()
+            ));
+        }
+        jdbcTemplate.update("""
+            UPDATE ingestion_jobs
+            SET created_at = now() - interval '2 hours'
+            WHERE data_source_id = ?
+              AND status = 'PENDING'
+            """, busySource.getId());
+
+        DataSourceEntity runnableSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "Runnable source",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        runnableSource.putConfig("externalId", "runnable-note");
+        runnableSource.putConfig("title", "Runnable note");
+        runnableSource.putConfig("content", "runnable content");
+        runnableSource.putConfig("principalKey", PrincipalKeys.user(user.getId()));
+        runnableSource = dataSources.saveAndFlush(runnableSource);
+        IngestionJobEntity runnableJob = ingestionJobs.saveAndFlush(IngestionJobEntity.pending(
+            workspace.getId(), runnableSource.getId(), IngestionTriggerType.MANUAL, user.getId()
+        ));
+
+        ingestionJobScheduler.runPendingJobsNow();
+
+        assertThat(ingestionJobs.findById(runnableJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.SUCCEEDED);
+        assertThat(ingestionJobs.findByDataSourceIdOrderByCreatedAtDesc(busySource.getId()))
+            .filteredOn(job -> job.getStatus() == IngestionJobStatus.PENDING)
+            .hasSize(10);
+    }
+
+    @Test
     void failedPipelineRollsBackDocumentWritesButMarksJobFailed() {
         UserEntity user = users.save(UserEntity.create("notion-owner@example.com", "Notion Owner"));
         WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(user.getId(), "Notion workspace"));

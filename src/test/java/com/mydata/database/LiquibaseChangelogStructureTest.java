@@ -47,6 +47,7 @@ class LiquibaseChangelogStructureTest {
             .contains("--preconditions onFail:HALT onError:HALT")
             .contains("HAVING count(*) > 1")
             .contains("idx_ingestion_job_items_job_succeeded_document")
-            .contains("uq_ingestion_jobs_running_data_source");
+            .contains("uq_ingestion_jobs_running_data_source")
+            .doesNotContain("CREATE UNIQUE INDEX IF NOT EXISTS");
     }
 }

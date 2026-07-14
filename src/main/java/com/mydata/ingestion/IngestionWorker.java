@@ -19,9 +19,11 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.OffsetDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -88,7 +90,8 @@ public class IngestionWorker {
     }
 
     private void ingestAndFinalize(UUID jobId) {
-        DataSourceSnapshot source = transactions.execute(status -> loadSnapshot(jobId));
+        SourceRunSnapshot sourceRun = transactions.execute(status -> loadSnapshot(jobId));
+        DataSourceSnapshot source = Objects.requireNonNull(sourceRun).source();
         DataSourceConnector connector = requireConnector(source.type());
         SyncCursor nextCursor = connector.fetchChanges(source, new ConnectorEventSink() {
             @Override
@@ -120,7 +123,7 @@ public class IngestionWorker {
                 persistFailure(jobId, event);
             }
         });
-        finalizeJob(jobId, source.id(), nextCursor, connector.reconciliationMode());
+        finalizeJob(jobId, sourceRun, nextCursor, connector.reconciliationMode());
     }
 
     private UUID persistDocument(DataSourceSnapshot source, ConnectorDocumentEvent event) {
@@ -131,11 +134,11 @@ public class IngestionWorker {
         }
     }
 
-    private DataSourceSnapshot loadSnapshot(UUID jobId) {
+    private SourceRunSnapshot loadSnapshot(UUID jobId) {
         IngestionJobEntity job = loadJob(jobId);
         DataSourceEntity dataSource = dataSources.findActiveById(job.getDataSourceId())
             .orElseThrow(() -> new IllegalStateException("데이터소스를 찾을 수 없습니다: " + job.getDataSourceId()));
-        return DataSourceSnapshot.from(dataSource);
+        return new SourceRunSnapshot(DataSourceSnapshot.from(dataSource), dataSource.getUpdatedAt());
     }
 
     private DataSourceConnector requireConnector(DataSourceType dataSourceType) {
@@ -156,39 +159,52 @@ public class IngestionWorker {
 
     private void finalizeJob(
         UUID jobId,
-        UUID dataSourceId,
+        SourceRunSnapshot sourceRun,
         SyncCursor nextCursor,
         ConnectorReconciliationMode reconciliationMode
     ) {
-        transactions.executeWithoutResult(status -> {
+        Integer softDeletedDocumentCount = transactions.execute(status -> {
             long succeeded = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.SUCCEEDED);
             long failed = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.FAILED);
             IngestionJobEntity job = loadJob(jobId);
             if (failed == 0) {
-                DataSourceEntity dataSource = dataSources.findActiveById(dataSourceId)
-                    .orElseThrow(() -> new IllegalStateException("데이터소스를 찾을 수 없습니다: " + dataSourceId));
+                DataSourceEntity dataSource = dataSources.findActiveByIdForUpdate(sourceRun.source().id())
+                    .orElseThrow(() -> new IllegalStateException(
+                        "데이터소스를 찾을 수 없습니다: " + sourceRun.source().id()
+                    ));
+                if (!Objects.equals(dataSource.getUpdatedAt(), sourceRun.revision())) {
+                    throw new IllegalStateException("수집 중 데이터소스 설정이 변경되었습니다");
+                }
                 job.markSucceeded();
                 ingestionJobs.flush();
+                int deletedCount = 0;
                 if (reconciliationMode == ConnectorReconciliationMode.FULL_SNAPSHOT) {
-                    int softDeletedDocumentCount = documents
+                    deletedCount = documents
                         .softDeleteUnseenForSucceededFullSnapshot(jobId);
-                    log.info(
-                        "전체 snapshot 문서 정리 완료: job={}, dataSource={}, softDeleted={}",
-                        jobId,
-                        dataSourceId,
-                        softDeletedDocumentCount
-                    );
                 }
                 if (nextCursor != null) {
                     dataSource.replaceSyncCursor(nextCursor.value());
                 }
                 dataSource.markSynced();
+                return deletedCount;
             } else if (succeeded > 0) {
                 job.markPartialFailed(succeeded + failed, failed);
             } else {
                 job.markFailed("전체 " + failed + "개 항목 수집 실패");
             }
+            return null;
         });
+        if (
+            reconciliationMode == ConnectorReconciliationMode.FULL_SNAPSHOT
+                && softDeletedDocumentCount != null
+        ) {
+            log.info(
+                "전체 snapshot 문서 정리 완료: job={}, dataSource={}, softDeleted={}",
+                jobId,
+                sourceRun.source().id(),
+                softDeletedDocumentCount
+            );
+        }
     }
 
     private void markFailed(UUID jobId, String errorMessage) {
@@ -201,5 +217,8 @@ public class IngestionWorker {
     private IngestionJobEntity loadJob(UUID jobId) {
         return ingestionJobs.findById(jobId)
             .orElseThrow(() -> new IllegalArgumentException("수집 job을 찾을 수 없습니다: " + jobId));
+    }
+
+    private record SourceRunSnapshot(DataSourceSnapshot source, OffsetDateTime revision) {
     }
 }

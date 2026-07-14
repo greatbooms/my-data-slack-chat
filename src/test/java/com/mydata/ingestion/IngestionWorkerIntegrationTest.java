@@ -59,12 +59,14 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     @Autowired IngestionWorker worker;
     @Autowired TestConnector connector;
     @Autowired JobItemSaveFault jobItemSaveFault;
+    @Autowired SnapshotSweepFault snapshotSweepFault;
     @Autowired TransactionTemplate callerTransactions;
 
     @BeforeEach
     void resetConnector() {
         connector.reset();
         jobItemSaveFault.reset();
+        snapshotSweepFault.reset();
     }
 
     @Test
@@ -340,6 +342,79 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void snapshotSweepFailureRollsBackSuccessDeletionCursorAndLastSyncedAt() {
+        Fixture fixture = fixture("sweep-failure", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(documentEvent("missing", readableDocument("missing")));
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+        DataSourceEntity beforeFailure = dataSources.findById(fixture.dataSource().getId()).orElseThrow();
+        Map<String, Object> cursorBeforeFailure = beforeFailure.syncCursorValue();
+        var lastSyncedBeforeFailure = beforeFailure.getLastSyncedAt();
+
+        connector.events();
+        IngestionJobEntity failedJob = pendingJob(fixture);
+        snapshotSweepFault.failNextSweep();
+        worker.run(failedJob.getId());
+
+        assertThat(ingestionJobs.findById(failedJob.getId()).orElseThrow())
+            .satisfies(job -> {
+                assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
+                assertThat(job.getErrorMessage()).isEqualTo("snapshot sweep infrastructure failure");
+            });
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(dataSources.findById(fixture.dataSource().getId()).orElseThrow())
+            .satisfies(source -> {
+                assertThat(source.syncCursorValue()).isEqualTo(cursorBeforeFailure);
+                assertThat(source.getLastSyncedAt()).isEqualTo(lastSyncedBeforeFailure);
+            });
+    }
+
+    @Test
+    void fullSnapshotFailsClosedWhenDataSourceChangesDuringFetch() throws Exception {
+        Fixture fixture = fixture("scope-change", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(documentEvent("missing", readableDocument("missing")));
+        worker.run(fixture.job().getId());
+        UUID missingId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "missing"
+        ).orElseThrow().getId();
+        DataSourceEntity beforeChange = dataSources.findById(fixture.dataSource().getId()).orElseThrow();
+        Map<String, Object> cursorBeforeChange = beforeChange.syncCursorValue();
+        var lastSyncedBeforeChange = beforeChange.getLastSyncedAt();
+
+        connector.events();
+        connector.blockNextFetch();
+        IngestionJobEntity staleJob = pendingJob(fixture);
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<?> staleRun = executor.submit(() -> worker.run(staleJob.getId()));
+            assertThat(connector.awaitBlockedFetch()).isTrue();
+            try {
+                DataSourceEntity changedSource = dataSources.findById(fixture.dataSource().getId()).orElseThrow();
+                changedSource.putConfig("scope", "changed-during-fetch");
+                dataSources.saveAndFlush(changedSource);
+            } finally {
+                connector.releaseBlockedFetch();
+            }
+            staleRun.get(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(ingestionJobs.findById(staleJob.getId()).orElseThrow())
+            .satisfies(job -> {
+                assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
+                assertThat(job.getErrorMessage()).isEqualTo("수집 중 데이터소스 설정이 변경되었습니다");
+            });
+        assertThat(documents.findById(missingId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(dataSources.findById(fixture.dataSource().getId()).orElseThrow())
+            .satisfies(source -> {
+                assertThat(source.syncCursorValue()).isEqualTo(cursorBeforeChange);
+                assertThat(source.getLastSyncedAt()).isEqualTo(lastSyncedBeforeChange);
+            });
+    }
+
+    @Test
     void allFailuresMarkFailedAndKeepCursorAndLastSyncedAt() {
         Fixture fixture = fixture("failed", Map.of("cursor", "before"));
         connector.failures(
@@ -521,6 +596,11 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Bean
+        SnapshotSweepFault snapshotSweepFault() {
+            return new SnapshotSweepFault();
+        }
+
+        @Bean
         @Primary
         IngestionJobItemRepository faultInjectingJobItems(
             @Qualifier("ingestionJobItemRepository") IngestionJobItemRepository delegate,
@@ -538,6 +618,31 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
                             && fault.shouldFail(item)
                     ) {
                         throw new IllegalStateException("job item infrastructure failure");
+                    }
+                    try {
+                        return method.invoke(delegate, arguments);
+                    } catch (InvocationTargetException exception) {
+                        throw exception.getCause();
+                    }
+                }
+            );
+        }
+
+        @Bean
+        @Primary
+        ExternalDocumentRepository faultInjectingDocuments(
+            @Qualifier("externalDocumentRepository") ExternalDocumentRepository delegate,
+            SnapshotSweepFault fault
+        ) {
+            return (ExternalDocumentRepository) Proxy.newProxyInstance(
+                ExternalDocumentRepository.class.getClassLoader(),
+                new Class<?>[] {ExternalDocumentRepository.class},
+                (proxy, method, arguments) -> {
+                    if (
+                        "softDeleteUnseenForSucceededFullSnapshot".equals(method.getName())
+                            && fault.shouldFail()
+                    ) {
+                        throw new IllegalStateException("snapshot sweep infrastructure failure");
                     }
                     try {
                         return method.invoke(delegate, arguments);
@@ -567,6 +672,22 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
             return externalId != null
                 && externalId.equals(item.getExternalId())
                 && status == item.getStatus();
+        }
+    }
+
+    static final class SnapshotSweepFault {
+        private final AtomicBoolean failNextSweep = new AtomicBoolean();
+
+        void reset() {
+            failNextSweep.set(false);
+        }
+
+        void failNextSweep() {
+            failNextSweep.set(true);
+        }
+
+        boolean shouldFail() {
+            return failNextSweep.compareAndSet(true, false);
         }
     }
 

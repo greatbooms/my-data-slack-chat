@@ -157,7 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_job_items_job_succeeded_document
     ON ingestion_job_items(job_id, document_id)
     WHERE status = 'SUCCEEDED' AND document_id IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_jobs_running_data_source
+CREATE UNIQUE INDEX uq_ingestion_jobs_running_data_source
     ON ingestion_jobs(data_source_id)
     WHERE status = 'RUNNING';
 ```
@@ -1139,3 +1139,14 @@ git diff --check b3087a0..HEAD
 ```
 
 Expected: both Gradle commands succeed and the diff check is clean. No Playwright run is required because no frontend or GraphQL UI contract changes.
+
+- [ ] **Step 7: Apply independent-review hardening with regression tests**
+
+Add focused RED/GREEN coverage for all Important findings:
+
+- scheduler query excludes sources that already have a `RUNNING` job and selects only the oldest pending job per runnable source;
+- finalization locks the data source and rejects a changed start revision before sweep, cursor, or last-synced updates;
+- the unique partial index is created without `IF NOT EXISTS`, so a wrong same-name index fails loudly;
+- a forced sweep repository exception rolls back `SUCCEEDED`, tombstones, cursor, and last-synced atomically.
+
+Run the four focused tests first, then the full ingestion/Notion/search regression set before the final full suite.

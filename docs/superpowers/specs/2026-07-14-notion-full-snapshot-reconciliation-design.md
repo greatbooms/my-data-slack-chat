@@ -183,11 +183,13 @@ claim 트랜잭션에서 다음 순서를 적용한다.
 3. 같은 data source에 다른 `RUNNING` job이 없는지 확인한다.
 4. 조건을 만족할 때만 현재 job을 `RUNNING`으로 변경한다.
 
-같은 source를 claim하는 트랜잭션은 동일한 data source 행에서 직렬화된다. 이미 실행 중인 job이 있으면 두 번째 job은 `PENDING`에 남고 scheduler의 다음 주기에 재시도한다. 다른 data source의 job은 서로 막지 않는다. 외부 API 순회 동안 행 잠금을 유지하지 않으므로 긴 DB 트랜잭션은 생기지 않는다.
+같은 source를 claim하는 트랜잭션은 동일한 data source 행에서 직렬화된다. 이미 실행 중인 job이 있으면 두 번째 job은 `PENDING`에 남고 scheduler의 다음 주기에 재시도한다. scheduler는 `RUNNING` job이 있는 source를 조회 단계에서 제외하고 source마다 가장 오래된 대기 job 하나만 선택한다. 따라서 막힌 source의 대기열이 조회 상한을 점유해 다른 source를 굶기지 않는다. 다른 data source의 job은 서로 막지 않는다. 외부 API 순회 동안 행 잠금을 유지하지 않으므로 긴 DB 트랜잭션은 생기지 않는다.
 
 DB 최종 불변 조건으로 `ingestion_jobs(data_source_id) WHERE status = 'RUNNING'` partial unique index도 둔다. 마이그레이션 시 기존 동일 source에 여러 `RUNNING` job이 있으면 임의로 winner를 선택하지 않고 precondition을 실패시켜 운영자가 상태를 확인하게 한다.
 
 중단된 프로세스가 남긴 `RUNNING` job은 기존과 마찬가지로 후속 job을 막을 수 있다. lease와 자동 복구는 별도 운영 기능으로 남기되, 이번 변경으로 조용히 동시 실행을 허용하지 않는다.
+
+snapshot 로드 시 data source의 `updated_at`을 실행 revision으로 함께 기억한다. 최종화에서는 data source 행을 다시 잠그고 revision이 같은지 확인한다. 원격 순회 중 관리자가 Notion root/database 설정, owner 또는 visibility를 변경했다면 오래된 범위로 정리하지 않고 최종화 트랜잭션을 롤백한 뒤 job을 `FAILED`로 기록한다. 이때 cursor와 last synced도 갱신하지 않는다.
 
 ## 트랜잭션 경계
 
@@ -196,7 +198,7 @@ DB 최종 불변 조건으로 `ingestion_jobs(data_source_id) WHERE status = 'RU
 - 원격 순회: DB 트랜잭션 없음
 - 문서 성공: document, ACL, chunk, embedding과 성공 job item을 함께 저장하는 건별 짧은 트랜잭션
 - 대상 실패: 실패 job item 하나를 저장하는 짧은 트랜잭션
-- 최종화: item 집계, 선택적 정리, cursor/last synced와 job 상태를 함께 반영하는 짧은 트랜잭션
+- 최종화: data source 행 잠금과 revision 재검증, item 집계, 선택적 정리, cursor/last synced와 job 상태를 함께 반영하는 짧은 트랜잭션
 
 문서 수가 많아져도 최종 정리는 set-based UPDATE 한 번이다. JVM에는 reconciliation용 전체 ID 목록을 만들지 않으며, 원격 호출 시간만큼 DB connection이나 transaction을 점유하지 않는다.
 
@@ -209,12 +211,12 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_job_items_job_succeeded_document
     ON ingestion_job_items(job_id, document_id)
     WHERE status = 'SUCCEEDED' AND document_id IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_jobs_running_data_source
+CREATE UNIQUE INDEX uq_ingestion_jobs_running_data_source
     ON ingestion_jobs(data_source_id)
     WHERE status = 'RUNNING';
 ```
 
-첫 인덱스는 현재 job의 성공 document anti-join을 지원한다. 기존 job item 조회 인덱스에는 `document_id`가 없어 이 목적을 충분히 지원하지 못한다. `external_documents`는 기존 `(data_source_id, external_id)` 인덱스의 선두 컬럼으로 source 범위를 좁힐 수 있으므로 우선 새 인덱스를 추가하지 않는다.
+첫 인덱스는 현재 job의 성공 document anti-join을 지원한다. 기존 job item 조회 인덱스에는 `document_id`가 없어 이 목적을 충분히 지원하지 못한다. 고유 인덱스에는 `IF NOT EXISTS`를 쓰지 않아 같은 이름의 잘못된 기존 인덱스를 단일 `RUNNING` 불변 조건으로 오인하지 않고 migration을 실패시킨다. `external_documents`는 기존 `(data_source_id, external_id)` 인덱스의 선두 컬럼으로 source 범위를 좁힐 수 있으므로 우선 새 인덱스를 추가하지 않는다.
 
 `db.changelog-master.json`은 include 전용으로 유지하고 실제 SQL은 `db/changelog/changes/007-full-snapshot-reconciliation-indexes.sql`에 둔다. JPA의 `deletedAt` 매핑은 최초 스키마의 타입과 nullable 조건에 맞춘다.
 
@@ -263,6 +265,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_jobs_running_data_source
 - 두 번째 job은 첫 job 실행 중 `PENDING`에 남는다.
 - 첫 job 종료 후 두 번째 job을 다시 claim할 수 있다.
 - 다른 data source의 job은 독립적으로 claim할 수 있다.
+- 실행 중인 source의 대기 job 10개보다 뒤에 있는 다른 source job도 scheduler가 실행한다.
+- 원격 순회 중 data source revision이 바뀌면 정리, cursor와 last synced를 적용하지 않고 job을 실패시킨다.
 
 ### DB와 검색
 

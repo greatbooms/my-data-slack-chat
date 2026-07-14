@@ -8,6 +8,6 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_job_items_job_succeeded_document
     WHERE status = 'SUCCEEDED'
       AND document_id IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_jobs_running_data_source
+CREATE UNIQUE INDEX uq_ingestion_jobs_running_data_source
     ON ingestion_jobs(data_source_id)
     WHERE status = 'RUNNING';
