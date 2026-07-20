@@ -41,6 +41,8 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 - 이미 진행 중인 작업 브랜치가 있다면, 새 작업과 섞이지 않는지 확인한 뒤 계속 사용할지 새 브랜치를 만들지 판단합니다.
 - 커밋 제목은 Conventional Commits 형식을 따릅니다. 예: `fix(workspaces): exclude deleted workspace data`
 - 커밋은 빈 본문 없이 작성합니다. 본문에는 최소한 작업 내용과 검증 내용을 적습니다.
+- 설계는 Claude가 직접 수행하고, 구현 작업은 Codex에게 위임합니다.
+- push 전에 Codex 적대적 리뷰를 실행합니다. 리뷰에서 수정할 사항이 나오면 push를 중단하고, 수정 후 리뷰를 다시 통과한 뒤에 push합니다.
 - PR 제목도 Conventional Commits 의미가 드러나게 작성하고, PR 본문에는 작업 내용, 영향 범위, 검증 결과를 포함합니다.
 - PR 병합은 merge commit 방식으로 진행합니다. squash merge나 rebase merge는 명시 요청이 없는 한 사용하지 않습니다.
 - UI가 포함된 작업은 완료 전에 Playwright로 실제 브라우저 화면을 직접 확인합니다.
