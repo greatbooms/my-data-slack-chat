@@ -13,7 +13,6 @@ services:
       - .env.prod
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: "50506"
     healthcheck:
       test:
         [
