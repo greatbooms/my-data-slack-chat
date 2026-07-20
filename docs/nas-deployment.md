@@ -143,11 +143,15 @@ docker logs --tail 120 my-data-slack-chat
 curl http://127.0.0.1:50506/actuator/health
 ```
 
+포트는 `.env.prod`의 `SERVER_PORT` 값을 사용합니다. 값을 생략하면 기본값 50506입니다.
+
 관리자 화면:
 
 ```text
 http://<NAS_HOST>:50506/admin-ui
 ```
+
+`SERVER_PORT`를 변경했다면 50506 대신 해당 포트로 접속합니다.
 
 ## DB 연결 문제 확인
 
@@ -176,6 +180,8 @@ docker inspect my-data-slack-chat --format '{{json .State.Health}}'
 docker logs --tail 120 my-data-slack-chat
 curl -v http://127.0.0.1:50506/actuator/health
 ```
+
+포트는 `.env.prod`의 `SERVER_PORT` 값을 사용합니다. 값을 생략하면 기본값 50506입니다.
 
 ### GitHub Actions가 NAS에 접속하지 못할 때
 
