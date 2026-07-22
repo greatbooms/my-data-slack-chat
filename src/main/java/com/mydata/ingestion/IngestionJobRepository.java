@@ -51,4 +51,14 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity
           )
         """, nativeQuery = true)
     int markPendingJobRunningIfDataSourceIdle(@Param("id") UUID id);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE ingestion_jobs
+        SET status = 'FAILED',
+            finished_at = now(),
+            error_message = :errorMessage
+        WHERE status = 'RUNNING'
+        """, nativeQuery = true)
+    int failStuckRunningJobs(@Param("errorMessage") String errorMessage);
 }
