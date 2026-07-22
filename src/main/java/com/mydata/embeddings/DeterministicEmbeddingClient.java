@@ -1,5 +1,6 @@
 package com.mydata.embeddings;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -7,6 +8,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 @Component
+@ConditionalOnProperty(prefix = "my-data.embedding", name = "provider", havingValue = "deterministic", matchIfMissing = true)
 public class DeterministicEmbeddingClient implements EmbeddingClient {
     private static final int DIMENSIONS = 1536;
 
