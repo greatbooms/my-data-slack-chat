@@ -23,6 +23,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class IngestionPipelineService {
+    public static record Result(UUID documentId, boolean skipped) {
+    }
+
     private final ExternalDocumentRepository documents;
     private final DocumentAclEntryRepository aclEntries;
     private final DocumentChunkRepository chunks;
@@ -47,7 +50,7 @@ public class IngestionPipelineService {
     }
 
     @Transactional
-    public UUID ingest(UUID workspaceId, UUID dataSourceId, RawExternalDocument rawDocument) {
+    public Result ingest(UUID workspaceId, UUID dataSourceId, RawExternalDocument rawDocument) {
         validateAclEntries(rawDocument.aclEntries());
         var existingDocument = documents.findByDataSourceIdAndExternalId(dataSourceId, rawDocument.externalId());
         if (existingDocument.isPresent() && isUnchanged(existingDocument.get(), rawDocument)) {
@@ -55,7 +58,7 @@ public class IngestionPipelineService {
             updateDocumentFromIngestion(document, rawDocument);
             documents.saveAndFlush(document);
             backfillMissingEmbeddings(document);
-            return document.getId();
+            return new Result(document.getId(), true);
         }
 
         ExternalDocumentEntity document = existingDocument
@@ -75,7 +78,7 @@ public class IngestionPipelineService {
         replaceAclEntries(document, rawDocument.aclEntries());
         List<DocumentChunkEntity> savedChunks = replaceChunks(document, rawDocument.content().text());
         writeEmbeddings(savedChunks);
-        return document.getId();
+        return new Result(document.getId(), false);
     }
 
     private void updateDocumentFromIngestion(ExternalDocumentEntity document, RawExternalDocument rawDocument) {

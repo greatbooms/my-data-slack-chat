@@ -60,6 +60,7 @@ function IngestionJobHistoryPanel({ dataSourceId, dataSourceName }: IngestionJob
             <tr>
               <th>상태</th>
               <th>성공</th>
+              <th>건너뜀</th>
               <th>실패</th>
               <th>트리거</th>
               <th>생성</th>
@@ -79,6 +80,7 @@ function IngestionJobHistoryPanel({ dataSourceId, dataSourceName }: IngestionJob
                   </span>
                 </td>
                 <td>{job.succeededItemCount}</td>
+                <td>{job.skippedItemCount}</td>
                 <td>{job.failedItemCount}</td>
                 <td>{job.triggerType}</td>
                 <td>{formatDate(job.createdAt)}</td>

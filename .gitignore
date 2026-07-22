@@ -13,3 +13,6 @@ out/
 .env.prod
 frontend/admin/node_modules/
 frontend/admin/dist/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

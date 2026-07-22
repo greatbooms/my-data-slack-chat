@@ -18,6 +18,7 @@ public interface IngestionJobItemRepository extends JpaRepository<IngestionJobIt
     @Query(value = """
         SELECT job_id AS "jobId",
                count(*) FILTER (WHERE status = 'SUCCEEDED') AS "succeededItemCount",
+               count(*) FILTER (WHERE status = 'SKIPPED') AS "skippedItemCount",
                count(*) FILTER (WHERE status = 'FAILED') AS "failedItemCount"
         FROM ingestion_job_items
         WHERE job_id IN (:jobIds)

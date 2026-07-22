@@ -73,6 +73,7 @@ public class AdminIngestionJobService {
                 return AdminIngestionJobPayload.from(
                     job,
                     count == null ? 0 : count.getSucceededItemCount(),
+                    count == null ? 0 : count.getSkippedItemCount(),
                     count == null ? 0 : count.getFailedItemCount()
                 );
             })

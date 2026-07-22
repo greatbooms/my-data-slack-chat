@@ -7,5 +7,7 @@ public interface IngestionJobItemCountProjection {
 
     long getSucceededItemCount();
 
+    long getSkippedItemCount();
+
     long getFailedItemCount();
 }
