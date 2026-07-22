@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
@@ -17,6 +18,11 @@ import java.io.IOException;
 public class AdminUiWebConfiguration implements WebMvcConfigurer {
     private static final String ADMIN_UI_RESOURCE_LOCATION = "classpath:/static/admin-ui/";
     private static final String INDEX_HTML = "index.html";
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/", "/admin-ui");
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {

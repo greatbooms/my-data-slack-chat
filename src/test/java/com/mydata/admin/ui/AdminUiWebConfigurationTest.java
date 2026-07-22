@@ -29,6 +29,13 @@ class AdminUiWebConfigurationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void redirectsRootToAdminUi() throws Exception {
+        mockMvc.perform(get("/"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/admin-ui"));
+    }
+
+    @Test
     void servesAdminUiSpaForLoginRootAndNestedRoutes() throws Exception {
         mockMvc.perform(get("/admin-ui/login"))
             .andExpect(status().isOk())
