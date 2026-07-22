@@ -228,6 +228,7 @@ fragment DataSourceFields on DataSource {
   name
   status
   syncMode
+  syncCron
   visibility
   notionRootPageId
   notionDatabaseId

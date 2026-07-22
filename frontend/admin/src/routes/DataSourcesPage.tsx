@@ -63,6 +63,7 @@ function DataSourcesPage() {
           slackWorkspaceUrl: editingDataSource.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,
           status: values.status,
           syncMode: values.syncMode,
+          syncCron: values.syncCron,
           visibility: values.visibility
         });
       }
@@ -79,6 +80,7 @@ function DataSourcesPage() {
         slackChannelId: values.type === 'SLACK' ? values.slackChannelId : undefined,
         slackWorkspaceUrl: values.type === 'SLACK' ? values.slackWorkspaceUrl : undefined,
         syncMode: values.syncMode,
+        syncCron: values.syncCron,
         type: values.type,
         visibility: values.visibility,
         workspaceId: values.workspaceId
