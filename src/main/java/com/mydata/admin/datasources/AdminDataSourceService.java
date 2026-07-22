@@ -16,6 +16,7 @@ import com.mydata.users.UserRepository;
 import com.mydata.workspaces.WorkspaceRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -88,6 +89,7 @@ public class AdminDataSourceService {
             DataSourceStatus.ACTIVE,
             input.syncMode() == null ? SyncMode.MANUAL : input.syncMode()
         );
+        applyCron(dataSource, input.syncCron());
         dataSource.assignOwner(ownerUserId);
         dataSource.changeVisibility(input.visibility() == null ? DataSourceVisibility.PRIVATE : input.visibility());
         applyCreateConfig(dataSource, input);
@@ -108,6 +110,9 @@ public class AdminDataSourceService {
         }
         if (input.syncMode() != null) {
             dataSource.changeSyncMode(input.syncMode());
+        }
+        if (input.syncCron() != null) {
+            applyCron(dataSource, input.syncCron());
         }
         if (hasText(input.ownerUserId())) {
             UUID ownerUserId = parseId(input.ownerUserId(), "ownerUserId");
@@ -211,6 +216,24 @@ public class AdminDataSourceService {
         }
 
         dataSource.putConfig(SLACK_WORKSPACE_URL_CONFIG_KEY, normalizeHttpUrl(value, "slackWorkspaceUrl"));
+    }
+
+    private static void applyCron(DataSourceEntity dataSource, String syncCron) {
+        if (syncCron == null) {
+            return;
+        }
+        if (syncCron.isBlank()) {
+            dataSource.changeSyncCron(null);
+            return;
+        }
+
+        String trimmed = syncCron.trim();
+        try {
+            CronExpression.parse(trimmed);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("sync_cron 형식이 올바르지 않습니다", exception);
+        }
+        dataSource.changeSyncCron(trimmed);
     }
 
     private static void applyNotionConfig(DataSourceEntity dataSource, String rootPageId, String databaseId) {

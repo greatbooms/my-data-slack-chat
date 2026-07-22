@@ -38,6 +38,27 @@ public interface DataSourceRepository extends JpaRepository<DataSourceEntity, UU
     @Query("""
         SELECT dataSource
         FROM DataSourceEntity dataSource
+        WHERE dataSource.deletedAt IS NULL
+          AND dataSource.status = com.mydata.datasources.DataSourceStatus.ACTIVE
+          AND dataSource.syncMode IN (
+            com.mydata.datasources.SyncMode.SCHEDULED,
+            com.mydata.datasources.SyncMode.MANUAL_AND_SCHEDULED
+          )
+          AND dataSource.syncCron IS NOT NULL
+          AND dataSource.syncCron <> ''
+          AND EXISTS (
+            SELECT 1
+            FROM WorkspaceEntity workspace
+            WHERE workspace.id = dataSource.workspaceId
+              AND workspace.deletedAt IS NULL
+          )
+        ORDER BY dataSource.createdAt ASC
+        """)
+    List<DataSourceEntity> findSchedulableActive();
+
+    @Query("""
+        SELECT dataSource
+        FROM DataSourceEntity dataSource
         WHERE dataSource.id = :id
           AND dataSource.deletedAt IS NULL
           AND EXISTS (

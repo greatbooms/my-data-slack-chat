@@ -31,4 +31,17 @@ public class IngestionCommandService {
             requestedByUserId
         ));
     }
+
+    @Transactional
+    public IngestionJobEntity requestScheduledSync(UUID dataSourceId) {
+        DataSourceEntity dataSource = dataSources.findActiveById(dataSourceId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "data source not found"));
+
+        return ingestionJobs.save(IngestionJobEntity.pending(
+            dataSource.getWorkspaceId(),
+            dataSource.getId(),
+            IngestionTriggerType.SCHEDULED,
+            null
+        ));
+    }
 }

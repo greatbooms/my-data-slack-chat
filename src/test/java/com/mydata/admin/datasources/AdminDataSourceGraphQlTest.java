@@ -171,6 +171,79 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             .andExpect(jsonPath("$.data.dataSources.items[*].name").value(not(hasItem("Workspace notes"))));
     }
 
+    @Test
+    void createsAndUpdatesDataSourceSyncCron() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("cron-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("cron-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: LOCAL_TEXT,
+                name: "Scheduled notes",
+                visibility: PRIVATE,
+                syncMode: SCHEDULED,
+                syncCron: "0 0 * * * *"
+              }) {
+                id
+                syncCron
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.syncCron").value("0 0 * * * *"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow().getSyncCron())
+            .isEqualTo("0 0 * * * *");
+
+        graphQl(adminSession, """
+            mutation {
+              updateDataSource(id: "%s", input: {
+                syncCron: "0 */15 * * * *"
+              }) {
+                syncCron
+              }
+            }
+            """.formatted(dataSourceId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.updateDataSource.syncCron").value("0 */15 * * * *"));
+
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow().getSyncCron())
+            .isEqualTo("0 */15 * * * *");
+    }
+
+    @Test
+    void rejectsInvalidDataSourceSyncCron() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("invalid-cron-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("invalid-cron-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: LOCAL_TEXT,
+                name: "Invalid schedule",
+                visibility: PRIVATE,
+                syncMode: SCHEDULED,
+                syncCron: "not-a-cron"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message").value("sync_cron 형식이 올바르지 않습니다"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "https://www.notion.so/greatbooms/Project-Wiki-248104cd477e80fdb757e945d38000bd?pvs=4",

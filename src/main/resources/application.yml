@@ -59,6 +59,9 @@ my-data:
       base-url: ${EMBEDDING_OPENAI_BASE_URL:${OPENAI_BASE_URL:https://api.openai.com}}
       api-key: ${EMBEDDING_OPENAI_API_KEY:${OPENAI_API_KEY:}}
       model: ${EMBEDDING_OPENAI_MODEL:text-embedding-3-small}
+  ingestion:
+    schedule-enqueue-enabled: ${INGESTION_SCHEDULE_ENQUEUE_ENABLED:true}
+    schedule-scan-fixed-delay-ms: ${INGESTION_SCHEDULE_SCAN_FIXED_DELAY_MS:60000}
   llm:
     provider: ${MY_DATA_LLM_PROVIDER:stub}
     max-input-chunks: ${MY_DATA_LLM_MAX_INPUT_CHUNKS:5}

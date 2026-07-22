@@ -22,6 +22,7 @@ export type DataSourceFormValues = {
   slackWorkspaceUrl: string;
   status: DataSourceStatus;
   syncMode: SyncMode;
+  syncCron: string;
   type: DataSourceType;
   visibility: DataSourceVisibility;
   workspaceId: string;
@@ -237,6 +238,17 @@ function DataSourceFormDialog({
             </select>
           </label>
 
+          {(values.syncMode === 'SCHEDULED' || values.syncMode === 'MANUAL_AND_SCHEDULED') ? (
+            <label>
+              수집 스케줄(cron)
+              <input
+                value={values.syncCron}
+                placeholder="0 0 * * * *"
+                onChange={(event) => setValues({ ...values, syncCron: event.target.value })}
+              />
+            </label>
+          ) : null}
+
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
 
           <footer>
@@ -264,6 +276,7 @@ function createInitialValues(dataSource: DataSourceFieldsFragment | null): DataS
     slackWorkspaceUrl: dataSource?.slackWorkspaceUrl ?? '',
     status: dataSource?.status ?? 'ACTIVE',
     syncMode: dataSource?.syncMode ?? 'MANUAL',
+    syncCron: dataSource?.syncCron ?? '',
     type: dataSource?.type ?? 'LOCAL_TEXT',
     visibility: dataSource?.visibility ?? 'PRIVATE',
     workspaceId: dataSource?.workspaceId ?? ''

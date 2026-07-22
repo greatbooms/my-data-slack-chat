@@ -19,7 +19,8 @@ public final class AdminDataSourceInputs {
         String notionRootPageId,
         String notionDatabaseId,
         String slackChannelId,
-        String slackWorkspaceUrl
+        String slackWorkspaceUrl,
+        String syncCron
     ) {
     }
 
@@ -32,7 +33,8 @@ public final class AdminDataSourceInputs {
         String notionRootPageId,
         String notionDatabaseId,
         String slackChannelId,
-        String slackWorkspaceUrl
+        String slackWorkspaceUrl,
+        String syncCron
     ) {
     }
 }

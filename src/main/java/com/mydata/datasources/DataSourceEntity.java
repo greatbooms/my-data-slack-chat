@@ -50,6 +50,9 @@ public class DataSourceEntity extends BaseEntity {
     @Column(name = "sync_mode", nullable = false, columnDefinition = "text")
     private SyncMode syncMode;
 
+    @Column(name = "sync_cron")
+    private String syncCron;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "text")
     private DataSourceVisibility visibility = DataSourceVisibility.PRIVATE;
@@ -111,6 +114,11 @@ public class DataSourceEntity extends BaseEntity {
 
     public void changeSyncMode(SyncMode syncMode) {
         this.syncMode = Objects.requireNonNull(syncMode, "syncMode must not be null");
+        touch();
+    }
+
+    public void changeSyncCron(String syncCron) {
+        this.syncCron = syncCron == null || syncCron.isBlank() ? null : syncCron.trim();
         touch();
     }
 
