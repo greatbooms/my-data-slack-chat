@@ -50,8 +50,15 @@ my-data:
     connect-timeout: ${NOTION_CONNECT_TIMEOUT:5s}
     request-timeout: ${NOTION_REQUEST_TIMEOUT:30s}
   embedding:
+    provider: ${EMBEDDING_PROVIDER:deterministic}
     model: ${EMBEDDING_MODEL:deterministic-1536}
-    dimensions: 1536
+    dimensions: ${EMBEDDING_DIMENSIONS:1536}
+    connect-timeout: ${EMBEDDING_CONNECT_TIMEOUT:5s}
+    request-timeout: ${EMBEDDING_REQUEST_TIMEOUT:30s}
+    openai:
+      base-url: ${EMBEDDING_OPENAI_BASE_URL:${OPENAI_BASE_URL:https://api.openai.com}}
+      api-key: ${EMBEDDING_OPENAI_API_KEY:${OPENAI_API_KEY:}}
+      model: ${EMBEDDING_OPENAI_MODEL:text-embedding-3-small}
   llm:
     provider: ${MY_DATA_LLM_PROVIDER:stub}
     max-input-chunks: ${MY_DATA_LLM_MAX_INPUT_CHUNKS:5}
