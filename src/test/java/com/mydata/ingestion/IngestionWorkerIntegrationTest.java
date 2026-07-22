@@ -257,6 +257,32 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void partialFailedFullSnapshotWithSkippedDocumentKeepsDocument() {
+        Fixture fixture = fixture("skipped-partial-full-snapshot", Map.of("cursor", "before"));
+        connector.fullSnapshot();
+        connector.events(documentEvent("keep", readableDocument("keep")));
+        worker.run(fixture.job().getId());
+        UUID keepId = documents.findByDataSourceIdAndExternalId(
+            fixture.dataSource().getId(), "keep"
+        ).orElseThrow().getId();
+
+        connector.events(
+            documentEvent("keep", readableDocument("keep")),
+            documentEvent("bad", documentWithUnsupportedAcl("bad"))
+        );
+        IngestionJobEntity partialJob = pendingJob(fixture);
+        worker.run(partialJob.getId());
+
+        assertThat(ingestionJobs.findById(partialJob.getId()).orElseThrow().getStatus())
+            .isEqualTo(IngestionJobStatus.PARTIAL_FAILED);
+        assertThat(documents.findById(keepId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(jobItems.countByJobIdAndStatus(partialJob.getId(), IngestionJobItemStatus.SKIPPED))
+            .isEqualTo(1);
+        assertThat(jobItems.countByJobIdAndStatus(partialJob.getId(), IngestionJobItemStatus.FAILED))
+            .isEqualTo(1);
+    }
+
+    @Test
     void emptySuccessfulFullSnapshotSoftDeletesAllSourceDocuments() {
         Fixture fixture = fixture("empty-full-snapshot", Map.of("cursor", "before"));
         connector.fullSnapshot();

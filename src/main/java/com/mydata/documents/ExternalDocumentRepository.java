@@ -32,7 +32,7 @@ public interface ExternalDocumentRepository extends JpaRepository<ExternalDocume
               SELECT 1
               FROM ingestion_job_items seen
               WHERE seen.job_id = j.id
-                AND seen.status = 'SUCCEEDED'
+                AND seen.status IN ('SUCCEEDED', 'SKIPPED')
                 AND seen.document_id = d.id
           )
         """, nativeQuery = true)

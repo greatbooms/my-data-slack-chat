@@ -182,6 +182,7 @@ type IngestionJob {
   status: IngestionJobStatus!
   errorMessage: String
   succeededItemCount: Int!
+  skippedItemCount: Int!
   failedItemCount: Int!
   startedAt: String
   finishedAt: String
@@ -241,6 +242,7 @@ enum IngestionJobStatus {
 
 enum IngestionJobItemStatus {
   SUCCEEDED
+  SKIPPED
   FAILED
 }
 

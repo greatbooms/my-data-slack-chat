@@ -50,6 +50,16 @@ public class IngestionJobItemEntity {
         return item;
     }
 
+    public static IngestionJobItemEntity skipped(UUID jobId, String externalId, UUID documentId) {
+        IngestionJobItemEntity item = new IngestionJobItemEntity();
+        item.jobId = jobId;
+        item.externalId = externalId;
+        item.documentId = Objects.requireNonNull(documentId);
+        item.status = IngestionJobItemStatus.SKIPPED;
+        item.reason = null;
+        return item;
+    }
+
     public static IngestionJobItemEntity failed(UUID jobId, String externalId, String reason) {
         IngestionJobItemEntity item = new IngestionJobItemEntity();
         item.jobId = jobId;

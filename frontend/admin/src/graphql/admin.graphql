@@ -264,6 +264,7 @@ fragment IngestionJobFields on IngestionJob {
   status
   errorMessage
   succeededItemCount
+  skippedItemCount
   failedItemCount
   startedAt
   finishedAt

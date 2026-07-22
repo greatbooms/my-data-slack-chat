@@ -125,7 +125,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void unchangedReingestionReturnsExistingDocumentIdForSucceededItem() {
+    void unchangedReingestionRecordsSkippedItemWithExistingDocumentId() {
         String suffix = UUID.randomUUID().toString();
         UserEntity user = users.save(UserEntity.create(
             "unchanged-local-owner-" + suffix + "@example.com",
@@ -161,7 +161,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         assertThat(jobItems.findByJobIdOrderByProcessedAtAscIdAsc(secondJob.getId()))
             .singleElement()
             .satisfies(item -> {
-                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SUCCEEDED);
+                assertThat(item.getStatus()).isEqualTo(IngestionJobItemStatus.SKIPPED);
                 assertThat(item.getDocumentId()).isEqualTo(documentId);
             });
     }
@@ -520,7 +520,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
         );
         UUID originalDocumentId = pipeline.ingest(
             fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
-        );
+        ).documentId();
         UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
             .getFirst()
             .getId();
@@ -531,7 +531,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
 
         UUID restoredDocumentId = pipeline.ingest(
             fixture.dataSource().getWorkspaceId(), fixture.dataSource().getId(), rawDocument
-        );
+        ).documentId();
 
         ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
         assertThat(restored.getId()).isEqualTo(originalDocumentId);
@@ -548,7 +548,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             fixture.dataSource().getWorkspaceId(),
             fixture.dataSource().getId(),
             restoreDocument(fixture, "changed-restore", "original content", "restore-hash-1")
-        );
+        ).documentId();
         UUID originalChunkId = chunks.findByDocumentIdOrderByChunkIndex(originalDocumentId)
             .getFirst()
             .getId();
@@ -561,7 +561,7 @@ class IngestionPipelineIntegrationTest extends PostgresIntegrationTest {
             fixture.dataSource().getWorkspaceId(),
             fixture.dataSource().getId(),
             restoreDocument(fixture, "changed-restore", "changed restored content", "restore-hash-2")
-        );
+        ).documentId();
 
         ExternalDocumentEntity restored = documents.findById(restoredDocumentId).orElseThrow();
         assertThat(restored.getId()).isEqualTo(originalDocumentId);

@@ -14,6 +14,7 @@ public record AdminIngestionJobPayload(
     IngestionJobStatus status,
     String errorMessage,
     int succeededItemCount,
+    int skippedItemCount,
     int failedItemCount,
     String startedAt,
     String finishedAt,
@@ -22,6 +23,7 @@ public record AdminIngestionJobPayload(
     public static AdminIngestionJobPayload from(
         IngestionJobEntity job,
         long succeededItemCount,
+        long skippedItemCount,
         long failedItemCount
     ) {
         String startedAt = job.getStartedAt() == null ? null : job.getStartedAt().toString();
@@ -34,6 +36,7 @@ public record AdminIngestionJobPayload(
             job.getStatus(),
             job.getErrorMessage(),
             Math.toIntExact(succeededItemCount),
+            Math.toIntExact(skippedItemCount),
             Math.toIntExact(failedItemCount),
             startedAt,
             finishedAt,
@@ -42,6 +45,6 @@ public record AdminIngestionJobPayload(
     }
 
     public static AdminIngestionJobPayload from(IngestionJobEntity job) {
-        return from(job, 0, 0);
+        return from(job, 0, 0, 0);
     }
 }

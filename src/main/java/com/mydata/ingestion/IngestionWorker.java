@@ -98,10 +98,15 @@ public class IngestionWorker {
             public void onDocument(ConnectorDocumentEvent event) {
                 try {
                     transactions.executeWithoutResult(status -> {
-                        UUID documentId = persistDocument(source, event);
-                        jobItems.saveAndFlush(IngestionJobItemEntity.succeeded(
-                            jobId, event.reference().qualifiedExternalId(), documentId
-                        ));
+                        IngestionPipelineService.Result result = persistDocument(source, event);
+                        IngestionJobItemEntity item = result.skipped()
+                            ? IngestionJobItemEntity.skipped(
+                                jobId, event.reference().qualifiedExternalId(), result.documentId()
+                            )
+                            : IngestionJobItemEntity.succeeded(
+                                jobId, event.reference().qualifiedExternalId(), result.documentId()
+                            );
+                        jobItems.saveAndFlush(item);
                     });
                 } catch (DocumentPersistenceException persistenceFailure) {
                     log.warn(
@@ -126,7 +131,10 @@ public class IngestionWorker {
         finalizeJob(jobId, sourceRun, nextCursor, connector.reconciliationMode());
     }
 
-    private UUID persistDocument(DataSourceSnapshot source, ConnectorDocumentEvent event) {
+    private IngestionPipelineService.Result persistDocument(
+        DataSourceSnapshot source,
+        ConnectorDocumentEvent event
+    ) {
         try {
             return pipeline.ingest(source.workspaceId(), source.id(), event.document());
         } catch (RuntimeException persistenceFailure) {
@@ -165,6 +173,7 @@ public class IngestionWorker {
     ) {
         Integer softDeletedDocumentCount = transactions.execute(status -> {
             long succeeded = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.SUCCEEDED);
+            long skipped = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.SKIPPED);
             long failed = jobItems.countByJobIdAndStatus(jobId, IngestionJobItemStatus.FAILED);
             IngestionJobEntity job = loadJob(jobId);
             if (failed == 0) {
@@ -187,8 +196,8 @@ public class IngestionWorker {
                 }
                 dataSource.markSynced();
                 return deletedCount;
-            } else if (succeeded > 0) {
-                job.markPartialFailed(succeeded + failed, failed);
+            } else if (succeeded + skipped > 0) {
+                job.markPartialFailed(succeeded + skipped + failed, failed);
             } else {
                 job.markFailed("전체 " + failed + "개 항목 수집 실패");
             }
