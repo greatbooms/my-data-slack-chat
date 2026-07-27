@@ -9,6 +9,8 @@ import com.mydata.admin.datasources.AdminDataSourceService;
 import com.mydata.admin.datasources.AdminIngestionJobItemPagePayload;
 import com.mydata.admin.datasources.AdminIngestionJobPayload;
 import com.mydata.admin.datasources.AdminIngestionJobService;
+import com.mydata.admin.datasources.EmbeddingCoveragePayload;
+import com.mydata.admin.datasources.ReembedStatusPayload;
 import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.CreateExternalIdentityInput;
 import com.mydata.admin.externalidentities.AdminExternalIdentityInputs.UpdateExternalIdentityInput;
 import com.mydata.admin.externalidentities.AdminExternalIdentityPagePayload;
@@ -26,6 +28,7 @@ import com.mydata.admin.workspaces.AdminWorkspacePagePayload;
 import com.mydata.admin.workspaces.AdminWorkspacePayload;
 import com.mydata.admin.workspaces.AdminWorkspaceService;
 import com.mydata.datasources.DataSourceRepository;
+import com.mydata.embeddings.EmbeddingMigrationService;
 import com.mydata.ingestion.IngestionJobRepository;
 import com.mydata.ingestion.IngestionJobItemStatus;
 import com.mydata.ingestion.IngestionJobStatus;
@@ -34,6 +37,7 @@ import com.mydata.users.UserRepository;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
+import org.springframework.graphql.data.method.annotation.SchemaMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,6 +45,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Controller
 public class AdminGraphQlController {
@@ -52,6 +57,7 @@ public class AdminGraphQlController {
     private final AdminDataSourceService adminDataSources;
     private final AdminIngestionJobService adminIngestionJobs;
     private final AdminExternalIdentityService adminExternalIdentities;
+    private final EmbeddingMigrationService embeddingMigration;
 
     public AdminGraphQlController(
         UserRepository users,
@@ -61,7 +67,8 @@ public class AdminGraphQlController {
         AdminWorkspaceService adminWorkspaces,
         AdminDataSourceService adminDataSources,
         AdminIngestionJobService adminIngestionJobs,
-        AdminExternalIdentityService adminExternalIdentities
+        AdminExternalIdentityService adminExternalIdentities,
+        EmbeddingMigrationService embeddingMigration
     ) {
         this.users = users;
         this.dataSources = dataSources;
@@ -71,6 +78,7 @@ public class AdminGraphQlController {
         this.adminDataSources = adminDataSources;
         this.adminIngestionJobs = adminIngestionJobs;
         this.adminExternalIdentities = adminExternalIdentities;
+        this.embeddingMigration = embeddingMigration;
     }
 
     @QueryMapping
@@ -237,6 +245,22 @@ public class AdminGraphQlController {
     @PreAuthorize("hasRole('ADMIN')")
     public AdminDataSourcePayload softDeleteDataSource(@Argument String id) {
         return adminDataSources.softDeleteDataSource(id);
+    }
+
+    @MutationMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ReembedStatusPayload reembedDataSource(@Argument String id) {
+        UUID dataSourceId = UUID.fromString(id);
+        embeddingMigration.startReembed(dataSourceId);
+        return new ReembedStatusPayload(
+            embeddingMigration.isRunning(dataSourceId),
+            EmbeddingCoveragePayload.from(embeddingMigration.coverage(dataSourceId))
+        );
+    }
+
+    @SchemaMapping(typeName = "DataSource", field = "embeddingCoverage")
+    public EmbeddingCoveragePayload embeddingCoverage(AdminDataSourcePayload dataSource) {
+        return EmbeddingCoveragePayload.from(embeddingMigration.coverage(dataSource.id()));
     }
 
     @MutationMapping

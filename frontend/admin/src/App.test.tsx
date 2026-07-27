@@ -1298,6 +1298,7 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     slackWorkspaceUrl: null,
     lastSyncedAt: null,
     deletedAt: null,
+    embeddingCoverage: { model: 'deterministic-1536', totalChunks: 0, coveredChunks: 0 },
     ...overrides
   };
 }

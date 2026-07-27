@@ -47,6 +47,9 @@ import {
   type RequestDataSourceSyncMutation,
   type RequestDataSourceSyncMutationVariables,
   RequestDataSourceSyncDocument,
+  ReembedDataSourceDocument,
+  type ReembedDataSourceMutation,
+  type ReembedDataSourceMutationVariables,
   ResetUserPasswordDocument,
   type ResetUserPasswordMutation,
   type ResetUserPasswordMutationVariables,
@@ -263,6 +266,13 @@ export async function softDeleteAdminDataSource(id: string): Promise<SoftDeleteD
 export async function requestAdminDataSourceSync(id: string): Promise<RequestDataSourceSyncMutation> {
   return await requestAdminGraphql<RequestDataSourceSyncMutation, RequestDataSourceSyncMutationVariables>(
     RequestDataSourceSyncDocument,
+    { id }
+  );
+}
+
+export async function reembedDataSource(id: string): Promise<ReembedDataSourceMutation> {
+  return await requestAdminGraphql<ReembedDataSourceMutation, ReembedDataSourceMutationVariables>(
+    ReembedDataSourceDocument,
     { id }
   );
 }

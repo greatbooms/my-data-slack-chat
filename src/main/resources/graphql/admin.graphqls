@@ -30,6 +30,7 @@ type Mutation {
   createDataSource(input: CreateDataSourceInput!): DataSource!
   updateDataSource(id: ID!, input: UpdateDataSourceInput!): DataSource!
   softDeleteDataSource(id: ID!): DataSource!
+  reembedDataSource(id: ID!): ReembedStatus!
   requestDataSourceSync(id: ID!): IngestionJob!
   createExternalIdentity(input: CreateExternalIdentityInput!): ExternalIdentity!
   updateExternalIdentity(id: ID!, input: UpdateExternalIdentityInput!): ExternalIdentity!
@@ -173,6 +174,18 @@ type DataSource {
   slackWorkspaceUrl: String
   lastSyncedAt: String
   deletedAt: String
+  embeddingCoverage: EmbeddingCoverage!
+}
+
+type EmbeddingCoverage {
+  model: String!
+  totalChunks: Int!
+  coveredChunks: Int!
+}
+
+type ReembedStatus {
+  running: Boolean!
+  coverage: EmbeddingCoverage!
 }
 
 type IngestionJob {
