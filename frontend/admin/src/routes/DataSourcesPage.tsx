@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { History, Pencil, Play, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { History, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import {
   createAdminDataSource,
   fetchAdminDataSourceFormOptions,
   fetchAdminDataSources,
+  reembedDataSource,
   requestAdminDataSourceSync,
   softDeleteAdminDataSource,
   updateAdminDataSource
@@ -27,11 +28,23 @@ function DataSourcesPage() {
   const [editingDataSource, setEditingDataSource] = useState<DataSourceFieldsFragment | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedJobSourceId, setSelectedJobSourceId] = useState<string | null>(null);
+  const [reembeddingDataSourceIds, setReembeddingDataSourceIds] = useState<Set<string>>(() => new Set());
   const dataSourcesQuery = useQuery({
     queryKey: DATA_SOURCES_QUERY_KEY,
-    queryFn: fetchAdminDataSources
+    queryFn: fetchAdminDataSources,
+    refetchInterval: reembeddingDataSourceIds.size > 0 ? 1000 : false
   });
   const dataSources = useFragment(DataSourceFieldsFragmentDoc, dataSourcesQuery.data?.dataSources.items ?? []);
+  useEffect(() => {
+    setReembeddingDataSourceIds((current) => {
+      const remaining = new Set([...current].filter((dataSourceId) => {
+        const dataSource = dataSources.find(({ id }) => id === dataSourceId);
+        return dataSource
+          && dataSource.embeddingCoverage.coveredChunks !== dataSource.embeddingCoverage.totalChunks;
+      }));
+      return remaining.size === current.size ? current : remaining;
+    });
+  }, [dataSources]);
   const selectedDataSource = dataSources.find((dataSource) => dataSource.id === selectedJobSourceId) ?? null;
   const formOptionsQuery = useQuery({
     enabled: isFormOpen,
@@ -99,6 +112,16 @@ function DataSourcesPage() {
     mutationFn: requestAdminDataSourceSync,
     onSuccess: refresh
   });
+  const reembedMutation = useMutation({
+    mutationFn: reembedDataSource,
+    onSuccess: (result, dataSourceId) => {
+      const coverage = result.reembedDataSource.coverage;
+      if (coverage.coveredChunks !== coverage.totalChunks) {
+        setReembeddingDataSourceIds((current) => new Set(current).add(dataSourceId));
+      }
+      queryClient.invalidateQueries({ queryKey: DATA_SOURCES_QUERY_KEY });
+    }
+  });
 
   function openCreateForm() {
     saveDataSourceMutation.reset();
@@ -152,6 +175,7 @@ function DataSourcesPage() {
                 <th>상태</th>
                 <th>가시성</th>
                 <th>수집 방식</th>
+                <th>임베딩</th>
                 <th>마지막 수집</th>
                 <th>작업</th>
               </tr>
@@ -166,6 +190,12 @@ function DataSourcesPage() {
                   </td>
                   <td>{dataSource.visibility}</td>
                   <td>{dataSource.syncMode}</td>
+                  <td>
+                    {dataSource.embeddingCoverage.totalChunks === 0
+                      && dataSource.embeddingCoverage.coveredChunks === 0
+                      ? '-'
+                      : `${dataSource.embeddingCoverage.coveredChunks}/${dataSource.embeddingCoverage.totalChunks}`}
+                  </td>
                   <td>{dataSource.lastSyncedAt ? formatDate(dataSource.lastSyncedAt) : '-'}</td>
                   <td>
                     <div className="row-actions">
@@ -178,6 +208,19 @@ function DataSourcesPage() {
                       >
                         <Pencil size={16} aria-hidden="true" />
                       </button>
+                      {!dataSource.deletedAt ? (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`${dataSource.name} 임베딩 재생성`}
+                          title="임베딩 재생성"
+                          disabled={reembedMutation.isPending
+                            && reembedMutation.variables === dataSource.id}
+                          onClick={() => reembedMutation.mutate(dataSource.id)}
+                        >
+                          <RefreshCw size={16} aria-hidden="true" />
+                        </button>
+                      ) : null}
                       {!dataSource.deletedAt ? (
                         <button
                           type="button"

@@ -211,6 +211,16 @@ mutation RequestDataSourceSync($id: ID!) {
   }
 }
 
+mutation ReembedDataSource($id: ID!) {
+  reembedDataSource(id: $id) {
+    running
+    coverage {
+      totalChunks
+      coveredChunks
+    }
+  }
+}
+
 fragment UserFields on User {
   id
   email
@@ -236,6 +246,11 @@ fragment DataSourceFields on DataSource {
   slackWorkspaceUrl
   lastSyncedAt
   deletedAt
+  embeddingCoverage {
+    model
+    totalChunks
+    coveredChunks
+  }
 }
 
 fragment WorkspaceFields on Workspace {

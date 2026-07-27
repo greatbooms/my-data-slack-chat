@@ -7,6 +7,10 @@ import com.mydata.datasources.DataSourceRepository;
 import com.mydata.datasources.DataSourceStatus;
 import com.mydata.datasources.DataSourceType;
 import com.mydata.datasources.SyncMode;
+import com.mydata.documents.DocumentChunkEntity;
+import com.mydata.documents.ExternalDocumentEntity;
+import com.mydata.documents.ExternalDocumentRepository;
+import com.mydata.embeddings.EmbeddingMigrationService;
 import com.mydata.support.PostgresIntegrationTest;
 import com.mydata.users.UserEntity;
 import com.mydata.users.UserRepository;
@@ -47,6 +51,8 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
     @Autowired UserRepository users;
     @Autowired WorkspaceRepository workspaces;
     @Autowired DataSourceRepository dataSources;
+    @Autowired ExternalDocumentRepository documents;
+    @Autowired EmbeddingMigrationService embeddingMigration;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired JdbcTemplate jdbcTemplate;
 
@@ -670,6 +676,91 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
             """.formatted(dataSource.getId()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors[0].message").value("데이터소스를 찾을 수 없습니다"));
+    }
+
+    @Test
+    void reembedsDataSourceAndReportsCoverageThroughGraphQl() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("reembed-owner-" + suffix + "@example.com", "소유자"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "재임베딩 워크스페이스"));
+        DataSourceEntity dataSource = DataSourceEntity.create(
+            workspace.getId(),
+            DataSourceType.LOCAL_TEXT,
+            "재임베딩 데이터소스",
+            DataSourceStatus.ACTIVE,
+            SyncMode.MANUAL
+        );
+        dataSource.assignOwner(owner.getId());
+        dataSource = dataSources.saveAndFlush(dataSource);
+        ExternalDocumentEntity document = ExternalDocumentEntity.create(
+            workspace.getId(),
+            dataSource.getId(),
+            "reembed-document",
+            DataSourceType.LOCAL_TEXT.name(),
+            "재임베딩 문서",
+            "reembed-hash"
+        );
+        document.addChunk(DocumentChunkEntity.create(document, 0, "관리자 재임베딩 청크 하나", null));
+        document.addChunk(DocumentChunkEntity.create(document, 1, "관리자 재임베딩 청크 둘", null));
+        documents.saveAndFlush(document);
+        embeddingMigration.reembedLoop(dataSource.getId());
+        MockHttpSession adminSession = loginAs("reembed-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              reembedDataSource(id: "%s") {
+                running
+                coverage {
+                  model
+                  totalChunks
+                  coveredChunks
+                }
+              }
+            }
+            """.formatted(dataSource.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.reembedDataSource.running").isBoolean())
+            .andExpect(jsonPath("$.data.reembedDataSource.coverage.model").value("deterministic-1536"))
+            .andExpect(jsonPath("$.data.reembedDataSource.coverage.totalChunks").value(2))
+            .andExpect(jsonPath("$.data.reembedDataSource.coverage.coveredChunks").value(2));
+
+        graphQl(adminSession, """
+            query {
+              dataSources {
+                items {
+                  id
+                  embeddingCoverage {
+                    totalChunks
+                    coveredChunks
+                  }
+                }
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath(
+                "$.data.dataSources.items[?(@.id == '%s')].embeddingCoverage.totalChunks"
+                    .formatted(dataSource.getId())
+            ).value(hasItem(2)))
+            .andExpect(jsonPath(
+                "$.data.dataSources.items[?(@.id == '%s')].embeddingCoverage.coveredChunks"
+                    .formatted(dataSource.getId())
+            ).value(hasItem(2)));
+    }
+
+    @Test
+    void rejectsReembedMutationWithInvalidDataSourceId() throws Exception {
+        MockHttpSession adminSession = loginAs("invalid-reembed-admin-" + UUID.randomUUID() + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              reembedDataSource(id: "not-a-uuid") {
+                running
+              }
+            }
+            """)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0]").exists());
     }
 
     private MockHttpSession loginAs(String email) throws Exception {
