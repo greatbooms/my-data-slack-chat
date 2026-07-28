@@ -20,6 +20,7 @@ public final class AdminDataSourceInputs {
         String notionDatabaseId,
         String slackChannelId,
         String slackWorkspaceUrl,
+        String driveFolderId,
         String syncCron
     ) {
     }
@@ -34,6 +35,7 @@ public final class AdminDataSourceInputs {
         String notionDatabaseId,
         String slackChannelId,
         String slackWorkspaceUrl,
+        String driveFolderId,
         String syncCron
     ) {
     }

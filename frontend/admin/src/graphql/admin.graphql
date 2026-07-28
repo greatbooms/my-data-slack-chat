@@ -244,6 +244,7 @@ fragment DataSourceFields on DataSource {
   notionDatabaseId
   slackChannelId
   slackWorkspaceUrl
+  driveFolderId
   lastSyncedAt
   deletedAt
   embeddingCoverage {

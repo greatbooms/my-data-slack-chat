@@ -64,6 +64,7 @@ function DataSourcesPage() {
     mutationFn: async (values: DataSourceFormValues): Promise<unknown> => {
       if (editingDataSource) {
         return await updateAdminDataSource(editingDataSource.id, {
+          driveFolderId: editingDataSource.type === 'GOOGLE_DRIVE' ? values.driveFolderId : undefined,
           name: values.name,
           notionDatabaseId: editingDataSource.type === 'NOTION' && values.notionRootKind === 'DATABASE'
             ? values.notionDatabaseId
@@ -82,6 +83,7 @@ function DataSourcesPage() {
       }
 
       return await createAdminDataSource({
+        driveFolderId: values.type === 'GOOGLE_DRIVE' ? values.driveFolderId : undefined,
         name: values.name,
         notionDatabaseId: values.type === 'NOTION' && values.notionRootKind === 'DATABASE'
           ? values.notionDatabaseId

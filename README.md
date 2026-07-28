@@ -102,6 +102,7 @@ vi .env
 | Slack 채널 수집 | Slack 채널 메시지를 데이터소스로 수집할 때 | `SLACK_BOT_TOKEN`, 관리자 화면의 Slack 채널 ID와 워크스페이스 URL | [Slack 앱 설정](docs/slack-app-setup.md#slack-채널-데이터소스-수집) |
 | Slack HTTP Events API | 공개 HTTPS endpoint 전환 전 URL verification과 서명 검증을 확인할 때 | `SLACK_HTTP_EVENTS_ENABLED`, `SLACK_SIGNING_SECRET` | [Slack 앱 설정](docs/slack-app-setup.md#http-events-api로-전환할-때) |
 | Notion | Notion 페이지와 하위 페이지·데이터베이스 또는 원본 데이터베이스를 수집할 때 | `NOTION_API_TOKEN`, 관리자 화면의 Notion 페이지 링크/ID 또는 데이터베이스 링크/ID | [Notion Integration 키 발급과 페이지/데이터베이스 연결](docs/notion-integration-setup.md) |
+| Google Drive | Drive 폴더의 문서를 데이터소스로 수집할 때 | `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, 관리자 화면의 폴더 링크/ID | [Google Drive 설정](docs/google-drive-setup.md) |
 | OpenAI 답변 생성 | Slack 답변을 OpenAI로 생성할 때 | `MY_DATA_LLM_PROVIDER=openai`, `OPENAI_API_KEY` | [.env.example](.env.example) |
 | Claude 답변 생성 | Slack 답변을 Claude로 생성할 때 | `MY_DATA_LLM_PROVIDER=claude`, `CLAUDE_API_KEY` | [.env.example](.env.example) |
 
@@ -146,8 +147,8 @@ ADMIN_BOOTSTRAP_DISPLAY_NAME=관리자
 - 유저 관리: 유저를 추가, 수정, 비활성화, 소프트 삭제, 복구하고 임시 비밀번호를 재설정할 수 있습니다.
 - 권한 관리 기반 정보: 데이터소스에는 소유 유저, 가시성, 수집 방식이 저장되며 이후 ACL 기반 검색/답변 범위 제어에 사용됩니다.
 
-현재 관리자 화면에서 직접 생성 가능한 데이터소스는 테스트/로컬 수집용 `LOCAL_TEXT`, Notion 페이지/데이터베이스 수집용 `NOTION`, Slack 채널 수집용 `SLACK`입니다.
-`GOOGLE_DRIVE` 타입은 스키마 선택지는 준비되어 있지만 실제 데이터 수집 커넥터는 후속 단계에서 붙입니다.
+현재 관리자 화면에서 직접 생성 가능한 데이터소스는 테스트/로컬 수집용 `LOCAL_TEXT`, Notion 페이지/데이터베이스 수집용 `NOTION`, Slack 채널 수집용 `SLACK`, Google Drive 폴더 수집용 `GOOGLE_DRIVE`입니다.
+`GOOGLE_DRIVE`는 지정 폴더를 하위 폴더까지 재귀 수집하며 Google Docs/Sheets, 텍스트 계열 파일, PDF에서 텍스트를 추출합니다. 자격증명 발급은 [Google Drive 설정](docs/google-drive-setup.md)을 참고하세요.
 
 프론트엔드만 개발 서버로 실행하려면 백엔드를 `50506` 포트로 먼저 띄운 뒤 다음 명령을 사용합니다.
 

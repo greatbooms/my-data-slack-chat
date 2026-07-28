@@ -49,6 +49,14 @@ my-data:
     base-url: ${NOTION_BASE_URL:https://api.notion.com}
     connect-timeout: ${NOTION_CONNECT_TIMEOUT:5s}
     request-timeout: ${NOTION_REQUEST_TIMEOUT:30s}
+  google-drive:
+    client-id: ${GOOGLE_DRIVE_CLIENT_ID:}
+    client-secret: ${GOOGLE_DRIVE_CLIENT_SECRET:}
+    refresh-token: ${GOOGLE_DRIVE_REFRESH_TOKEN:}
+    token-url: ${GOOGLE_DRIVE_TOKEN_URL:https://oauth2.googleapis.com/token}
+    api-base-url: ${GOOGLE_DRIVE_API_BASE_URL:https://www.googleapis.com}
+    connect-timeout: ${GOOGLE_DRIVE_CONNECT_TIMEOUT:5s}
+    request-timeout: ${GOOGLE_DRIVE_REQUEST_TIMEOUT:30s}
   embedding:
     provider: ${EMBEDDING_PROVIDER:deterministic}
     model: ${EMBEDDING_MODEL:deterministic-1536}

@@ -459,6 +459,139 @@ class AdminDataSourceGraphQlTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void createsGoogleDriveDataSourceWithFolderUrlConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("drive-url-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Drive workspace"));
+        MockHttpSession adminSession = loginAs("drive-url-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: GOOGLE_DRIVE,
+                name: "Drive folder",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                driveFolderId: "https://drive.google.com/drive/folders/abc123XYZ_-45?usp=sharing"
+              }) {
+                id
+                type
+                driveFolderId
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.type").value("GOOGLE_DRIVE"))
+            .andExpect(jsonPath("$.data.createDataSource.driveFolderId").value("abc123XYZ_-45"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("driveFolderId")).isEqualTo("abc123XYZ_-45");
+        assertPolicy(dataSourceId, PrincipalKeys.workspace(workspace.getId()));
+    }
+
+    @Test
+    void createsGoogleDriveDataSourceWithRawFolderIdConfig() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("drive-id-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Drive workspace"));
+        MockHttpSession adminSession = loginAs("drive-id-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: GOOGLE_DRIVE,
+                name: "Drive folder",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                driveFolderId: "abc123XYZ_-45"
+              }) {
+                id
+                driveFolderId
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createDataSource.driveFolderId").value("abc123XYZ_-45"))
+            .andReturn();
+
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+        assertThat(dataSources.findById(UUID.fromString(dataSourceId)).orElseThrow()
+            .configValue("driveFolderId")).isEqualTo("abc123XYZ_-45");
+    }
+
+    @Test
+    void rejectsGoogleDriveDataSourceWithoutFolderId() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("drive-empty-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Drive workspace"));
+        MockHttpSession adminSession = loginAs("drive-empty-admin-" + suffix + "@example.com");
+
+        graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: GOOGLE_DRIVE,
+                name: "Drive folder",
+                visibility: WORKSPACE,
+                syncMode: MANUAL
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("GOOGLE_DRIVE 데이터소스는 driveFolderId를 설정해야 합니다"));
+    }
+
+    @Test
+    void rejectsDriveFolderIdUpdateForNotionDataSource() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        UserEntity owner = users.save(UserEntity.create("drive-notion-owner-" + suffix + "@example.com", "Owner"));
+        WorkspaceEntity workspace = workspaces.save(WorkspaceEntity.create(owner.getId(), "Personal"));
+        MockHttpSession adminSession = loginAs("drive-notion-admin-" + suffix + "@example.com");
+
+        MvcResult createResult = graphQl(adminSession, """
+            mutation {
+              createDataSource(input: {
+                workspaceId: "%s",
+                ownerUserId: "%s",
+                type: NOTION,
+                name: "Notion wiki",
+                visibility: WORKSPACE,
+                syncMode: MANUAL,
+                notionRootPageId: "248104cd477e80fdb757e945d38000bd"
+              }) {
+                id
+              }
+            }
+            """.formatted(workspace.getId(), owner.getId()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String dataSourceId = JsonPaths.readString(createResult, "$.data.createDataSource.id");
+
+        graphQl(adminSession, """
+            mutation {
+              updateDataSource(id: "%s", input: {
+                driveFolderId: "abc123XYZ_-45"
+              }) {
+                driveFolderId
+              }
+            }
+            """.formatted(dataSourceId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors[0].message")
+                .value("driveFolderId는 GOOGLE_DRIVE 데이터소스에서만 설정할 수 있습니다"));
+    }
+
+    @Test
     void createsSlackDataSourceWithChannelConfig() throws Exception {
         String suffix = UUID.randomUUID().toString();
         UserEntity owner = users.save(UserEntity.create("slack-owner-" + suffix + "@example.com", "Owner"));

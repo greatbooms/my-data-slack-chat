@@ -893,7 +893,7 @@ describe('관리자 앱 인증 흐름', () => {
     expect(screen.getByRole('option', { name: 'LOCAL_TEXT' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'NOTION' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'SLACK' })).toBeVisible();
-    expect(screen.queryByRole('option', { name: 'GOOGLE_DRIVE' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'GOOGLE_DRIVE' })).toBeVisible();
     fireEvent.change(screen.getByLabelText('종류'), {
       target: { value: 'NOTION' }
     });
@@ -1063,6 +1063,88 @@ describe('관리자 앱 인증 흐름', () => {
       workspaceId: 'workspace-id'
     });
     expect(createBody.variables.input.notionRootPageId).toBeUndefined();
+  });
+
+  it('Google Drive 데이터소스를 만들 때 폴더 링크를 함께 보낸다', async () => {
+    const folderLink = 'https://drive.google.com/drive/folders/folder-123';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        headerName: 'X-CSRF-TOKEN',
+        parameterName: '_csrf',
+        token: 'csrf-token'
+      }))
+      .mockResolvedValueOnce(adminDataSourcesResponse([]))
+      .mockResolvedValueOnce(adminDataSourceFormOptionsResponse({
+        users: [
+          {
+            id: 'user-id',
+            email: 'owner@example.com',
+            displayName: '데이터 오너',
+            role: 'USER',
+            status: 'ACTIVE',
+            deletedAt: null
+          }
+        ],
+        workspaces: [
+          {
+            id: 'workspace-id',
+            ownerUserId: 'user-id',
+            name: 'Personal',
+            deletedAt: null
+          }
+        ]
+      }))
+      .mockResolvedValueOnce(graphqlResponse('createDataSource', dataSourceFixture({
+        id: 'google-drive-source-id',
+        name: 'Google Drive folder',
+        type: 'GOOGLE_DRIVE',
+        driveFolderId: 'folder-123'
+      })))
+      .mockResolvedValueOnce(adminDataSourcesResponse([
+        dataSourceFixture({
+          id: 'google-drive-source-id',
+          name: 'Google Drive folder',
+          type: 'GOOGLE_DRIVE',
+          driveFolderId: 'folder-123'
+        })
+      ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/data-sources');
+
+    expect(await screen.findByText('데이터소스가 없습니다.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '데이터소스 추가' }));
+    expect(await screen.findByRole('option', { name: 'Personal' })).toBeVisible();
+    fireEvent.change(screen.getByLabelText('이름'), {
+      target: { value: 'Google Drive folder' }
+    });
+    fireEvent.change(screen.getByLabelText('워크스페이스'), {
+      target: { value: 'workspace-id' }
+    });
+    fireEvent.change(screen.getByLabelText('소유 유저'), {
+      target: { value: 'user-id' }
+    });
+    fireEvent.change(screen.getByLabelText('종류'), {
+      target: { value: 'GOOGLE_DRIVE' }
+    });
+    const folderInput = screen.getByLabelText('Google Drive 폴더 링크 또는 ID');
+    expect(folderInput).toBeVisible();
+    fireEvent.change(folderInput, {
+      target: { value: folderLink }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    });
+    const createBody = JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string);
+    expect(createBody.variables.input).toMatchObject({
+      driveFolderId: folderLink,
+      name: 'Google Drive folder',
+      ownerUserId: 'user-id',
+      type: 'GOOGLE_DRIVE',
+      workspaceId: 'workspace-id'
+    });
   });
 
   it('Slack 데이터소스를 만들 때 채널 ID를 함께 보낸다', async () => {
@@ -1296,6 +1378,7 @@ function dataSourceFixture(overrides: Record<string, unknown> = {}) {
     notionDatabaseId: null,
     slackChannelId: null,
     slackWorkspaceUrl: null,
+    driveFolderId: null,
     lastSyncedAt: null,
     deletedAt: null,
     embeddingCoverage: { model: 'deterministic-1536', totalChunks: 0, coveredChunks: 0 },

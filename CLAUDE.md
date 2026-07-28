@@ -16,6 +16,7 @@
 - ACL 필터가 적용된 벡터 검색
 - 채팅 답변과 출처 저장
 - Slack Socket Mode 수신 기반과 선택형 HTTP Events API 엔드포인트
+- Google Drive 폴더 수집 커넥터 (Docs/Sheets export, 텍스트, PDF)
 
 ## 로컬 실행
 

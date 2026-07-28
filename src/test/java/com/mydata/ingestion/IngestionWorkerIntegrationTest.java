@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -49,6 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@SpringBootTest(properties = "spring.main.allow-bean-definition-overriding=true")
 class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
     @Autowired UserRepository users;
     @Autowired WorkspaceRepository workspaces;
@@ -612,7 +614,7 @@ class IngestionWorkerIntegrationTest extends PostgresIntegrationTest {
 
     @TestConfiguration
     static class TestConnectorConfiguration {
-        @Bean
+        @Bean("googleDriveConnector")
         TestConnector testConnector() {
             return new TestConnector();
         }

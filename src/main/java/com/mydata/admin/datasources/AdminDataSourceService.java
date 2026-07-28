@@ -32,6 +32,9 @@ public class AdminDataSourceService {
     private static final String NOTION_DATABASE_ID_CONFIG_KEY = "notionDatabaseId";
     private static final String SLACK_CHANNEL_ID_CONFIG_KEY = "slackChannelId";
     private static final String SLACK_WORKSPACE_URL_CONFIG_KEY = "slackWorkspaceUrl";
+    private static final String DRIVE_FOLDER_ID_CONFIG_KEY = "driveFolderId";
+    private static final Pattern DRIVE_FOLDER_URL_PATTERN = Pattern.compile("/folders/([A-Za-z0-9_-]+)");
+    private static final Pattern DRIVE_FOLDER_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]+$");
     private static final Pattern NOTION_ID_PATTERN = Pattern.compile(
         "(?i)([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
     );
@@ -178,6 +181,12 @@ public class AdminDataSourceService {
             );
             putOptionalSlackWorkspaceUrl(dataSource, input.slackWorkspaceUrl());
         }
+        if (dataSource.getType() == DataSourceType.GOOGLE_DRIVE) {
+            if (!hasText(input.driveFolderId())) {
+                throw new IllegalArgumentException("GOOGLE_DRIVE 데이터소스는 driveFolderId를 설정해야 합니다");
+            }
+            dataSource.putConfig(DRIVE_FOLDER_ID_CONFIG_KEY, normalizeDriveFolderId(input.driveFolderId()));
+        }
     }
 
     private static void applyUpdateConfig(DataSourceEntity dataSource, UpdateDataSourceInput input) {
@@ -206,6 +215,13 @@ public class AdminDataSourceService {
             }
 
             putOptionalSlackWorkspaceUrl(dataSource, input.slackWorkspaceUrl());
+        }
+
+        if (input.driveFolderId() != null) {
+            if (dataSource.getType() != DataSourceType.GOOGLE_DRIVE) {
+                throw new IllegalArgumentException("driveFolderId는 GOOGLE_DRIVE 데이터소스에서만 설정할 수 있습니다");
+            }
+            dataSource.putConfig(DRIVE_FOLDER_ID_CONFIG_KEY, normalizeDriveFolderId(input.driveFolderId()));
         }
     }
 
@@ -266,8 +282,11 @@ public class AdminDataSourceService {
         if (type == null) {
             throw new IllegalArgumentException("type 값은 비어 있을 수 없습니다");
         }
-        if (type != DataSourceType.LOCAL_TEXT && type != DataSourceType.NOTION && type != DataSourceType.SLACK) {
-            throw new IllegalArgumentException("현재 관리자 화면에서는 LOCAL_TEXT, NOTION 또는 SLACK 데이터소스만 만들 수 있습니다");
+        if (type != DataSourceType.LOCAL_TEXT && type != DataSourceType.NOTION && type != DataSourceType.SLACK
+            && type != DataSourceType.GOOGLE_DRIVE) {
+            throw new IllegalArgumentException(
+                "현재 관리자 화면에서는 LOCAL_TEXT, NOTION, SLACK 또는 GOOGLE_DRIVE 데이터소스만 만들 수 있습니다"
+            );
         }
         return type;
     }
@@ -339,6 +358,21 @@ public class AdminDataSourceService {
             + "-" + compact.substring(12, 16)
             + "-" + compact.substring(16, 20)
             + "-" + compact.substring(20);
+    }
+
+    private static String normalizeDriveFolderId(String value) {
+        String trimmed = requireText(value, "driveFolderId");
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            Matcher matcher = DRIVE_FOLDER_URL_PATTERN.matcher(trimmed);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+            throw new IllegalArgumentException("driveFolderId 형식이 올바르지 않습니다");
+        }
+        if (!DRIVE_FOLDER_ID_PATTERN.matcher(trimmed).matches()) {
+            throw new IllegalArgumentException("driveFolderId 형식이 올바르지 않습니다");
+        }
+        return trimmed;
     }
 
     private static boolean hasText(String value) {

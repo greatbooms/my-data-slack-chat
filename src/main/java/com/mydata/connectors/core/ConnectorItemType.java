@@ -4,5 +4,7 @@ public enum ConnectorItemType {
     PAGE,
     DATABASE,
     DATA_SOURCE,
-    BLOCK
+    BLOCK,
+    FILE,
+    FOLDER
 }

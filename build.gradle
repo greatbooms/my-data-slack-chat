@@ -40,6 +40,7 @@ dependencies {
     implementation "com.slack.api:bolt:${slackSdkVersion}"
     implementation "com.slack.api:bolt-jakarta-socket-mode:${slackSdkVersion}"
     implementation 'org.liquibase:liquibase-core'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.5'
 
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'org.glassfish.tyrus.bundles:tyrus-standalone-client:2.2.0'
