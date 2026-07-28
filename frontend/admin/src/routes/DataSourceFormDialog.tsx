@@ -13,6 +13,7 @@ import type {
 type NotionRootKind = 'PAGE' | 'DATABASE';
 
 export type DataSourceFormValues = {
+  driveFolderId: string;
   name: string;
   notionDatabaseId: string;
   notionRootKind: NotionRootKind;
@@ -135,6 +136,7 @@ function DataSourceFormDialog({
               <option value="LOCAL_TEXT">LOCAL_TEXT</option>
               <option value="NOTION">NOTION</option>
               <option value="SLACK">SLACK</option>
+              <option value="GOOGLE_DRIVE">GOOGLE_DRIVE</option>
             </select>
           </label>
 
@@ -175,6 +177,19 @@ function DataSourceFormDialog({
                 </label>
               )}
             </>
+          ) : null}
+
+          {values.type === 'GOOGLE_DRIVE' ? (
+            <label>
+              Google Drive 폴더 링크 또는 ID
+              <input
+                value={values.driveFolderId}
+                disabled={Boolean(dataSource && dataSource.type !== 'GOOGLE_DRIVE')}
+                placeholder="https://drive.google.com/drive/folders/..."
+                required
+                onChange={(event) => setValues({ ...values, driveFolderId: event.target.value })}
+              />
+            </label>
           ) : null}
 
           {values.type === 'SLACK' ? (
@@ -267,6 +282,7 @@ function DataSourceFormDialog({
 
 function createInitialValues(dataSource: DataSourceFieldsFragment | null): DataSourceFormValues {
   return {
+    driveFolderId: dataSource?.driveFolderId ?? '',
     name: dataSource?.name ?? '',
     notionDatabaseId: dataSource?.notionDatabaseId ?? '',
     notionRootKind: dataSource?.notionDatabaseId ? 'DATABASE' : 'PAGE',
