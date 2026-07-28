@@ -18,6 +18,8 @@ public record ConnectorItemReference(
             case DATABASE -> "database";
             case DATA_SOURCE -> "data-source";
             case BLOCK -> "block";
+            case FILE -> "file";
+            case FOLDER -> "folder";
         };
         return prefix + ":" + externalId;
     }

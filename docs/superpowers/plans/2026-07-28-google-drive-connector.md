@@ -625,6 +625,7 @@ class GoogleDriveConfiguration {
 **Files:**
 - Modify: `build.gradle` (dependencies에 `implementation 'org.apache.pdfbox:pdfbox:3.0.5'`)
 - Modify: `src/main/java/com/mydata/connectors/core/ConnectorItemType.java` (`FILE`, `FOLDER` 값 추가 — DB 저장 안 되므로 안전)
+- Modify: `src/main/java/com/mydata/connectors/core/ConnectorItemReference.java` (exhaustive switch에 `case FILE -> "file";`, `case FOLDER -> "folder";` 추가)
 - Create: `src/main/java/com/mydata/connectors/googledrive/GoogleDriveConnector.java`
 - Test: `src/test/java/com/mydata/connectors/googledrive/GoogleDriveConnectorTest.java`
 
