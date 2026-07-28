@@ -172,6 +172,7 @@ type DataSource {
   notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
+  driveFolderId: String
   lastSyncedAt: String
   deletedAt: String
   embeddingCoverage: EmbeddingCoverage!
@@ -271,6 +272,7 @@ input CreateDataSourceInput {
   notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
+  driveFolderId: String
   syncCron: String
 }
 
@@ -284,5 +286,6 @@ input UpdateDataSourceInput {
   notionDatabaseId: String
   slackChannelId: String
   slackWorkspaceUrl: String
+  driveFolderId: String
   syncCron: String
 }

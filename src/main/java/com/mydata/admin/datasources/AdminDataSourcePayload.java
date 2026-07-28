@@ -22,6 +22,7 @@ public record AdminDataSourcePayload(
     String notionDatabaseId,
     String slackChannelId,
     String slackWorkspaceUrl,
+    String driveFolderId,
     String lastSyncedAt,
     String deletedAt
 ) {
@@ -42,6 +43,7 @@ public record AdminDataSourcePayload(
             blankToNull(dataSource.configValue("notionDatabaseId")),
             blankToNull(dataSource.configValue("slackChannelId")),
             blankToNull(dataSource.configValue("slackWorkspaceUrl")),
+            blankToNull(dataSource.configValue("driveFolderId")),
             lastSyncedAt,
             deletedAt
         );
